@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildViewModel } from '../../../docs/js/ui/viewmodel.mjs';
 import { renderApp } from '../../../docs/js/ui/render.mjs';
-import { NOW, MIN, sheetRaw, sheetResult, inputs, noSectionErrors } from './fixtures.mjs';
+import { NOW, MIN, env, esBars, sheetRaw, sheetResult, inputs, noSectionErrors } from './fixtures.mjs';
 
 // P0-1 (/tmp/g3/vm_invalid_open.mjs): an open ES row with side "Buy" is rejected by normalizeSheet.
 const BAD_OPEN = { id: 'O9', root: 'ES', side: 'Buy', qty: 3, entry: 5795, exit: '', entry_time: '2026-09-30T13:00:00-05:00', exit_time: '', fees_usd: 0, notes: '' };
@@ -144,6 +144,49 @@ test('P1-1: all inputs fresh gives no badges on meters, sizer or positions', () 
   for (const m of vm.account.meters) assert.equal(m.badge, null, m.key);
   assert.equal(vm.sizer.badge, null);
   assert.equal(vm.positions.badge, null);
+});
+
+/**
+ * ES bars shifted into the past.
+ * @param {number} shiftMs
+ */
+function esBarsShifted(shiftMs) {
+  return esBars().map((b) => ({ ...b, t: new Date(Date.parse(b.t) - shiftMs).toISOString() }));
+}
+
+test('P1-4: fresh bars envelope but an ES series that ended 30h ago: mark STALE, open P&L UNKNOWN', () => {
+  // /tmp/g3/vm_attacks.mjs #6.
+  const base = inputs();
+  const bars = env('bars', { roots: { ES: { symbol: 'ES.c.0', bars: esBarsShifted(30 * 60 * MIN) } } }, NOW - 30 * MIN);
+  const vm = buildViewModel({ ...base, envs: { ...base.envs, bars } });
+  noSectionErrors(vm);
+  assert.ok(vm.account && vm.positions && vm.markets);
+  assert.equal(vm.chips.find((c) => c.name === 'bars')?.state, 'fresh');
+  const mark = vm.positions.rows[0]?.mark;
+  assert.equal(mark?.text, '5801.25');
+  assert.equal(mark?.badge, 'STALE 1d 6h'); // last bar closed 30h ago
+  assert.equal(vm.positions.rows[0]?.pnl.text, 'UNKNOWN');
+  assert.equal(vm.account.open.text, 'UNKNOWN');
+  const es = vm.markets.find((m) => m.root === 'ES');
+  assert.equal(es?.last.text, '5801.25');
+  assert.equal(es?.last.badge, 'STALE 1d 6h');
+  assert.match(es?.atr.badge ?? '', /^STALE/);
+});
+
+test('P1-4: per-root check passes for a series whose last bar closed within the bars policy', () => {
+  const base = inputs();
+  const bars = env('bars', { roots: { ES: { symbol: 'ES.c.0', bars: esBarsShifted(60 * MIN) } } }, NOW - 30 * MIN);
+  const vm = buildViewModel({ ...base, envs: { ...base.envs, bars } });
+  assert.equal(vm.positions?.rows[0]?.mark.badge, null);
+  assert.notEqual(vm.account?.open.text, 'UNKNOWN');
+});
+
+test('P1-4: a root with no bars is UNKNOWN', () => {
+  const base = inputs();
+  const bars = env('bars', { roots: { NQ: { symbol: 'NQ.c.0', bars: esBars() } } }, NOW - 30 * MIN);
+  const vm = buildViewModel({ ...base, envs: { ...base.envs, bars } });
+  assert.equal(vm.positions?.rows[0]?.mark.text, 'UNKNOWN');
+  assert.equal(vm.account?.open.text, 'UNKNOWN');
 });
 
 test('P0-2: complete Daily data still gives a known peak', () => {

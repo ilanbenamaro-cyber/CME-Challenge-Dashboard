@@ -599,23 +599,59 @@ function buildCtx(inp) {
   };
 }
 
+/** Duration of one bar in the bars envelope (1h bars; `t` is the bar's open time). */
+const BAR_MS = 60 * 60 * 1000;
+
 /**
- * Mark price for a root from the bars envelope.
+ * Freshness of one root's own series: a synthetic envelope whose data_as_of is the last bar's close
+ * (t + 1h, capped at now for a still-forming bar), classified with the bars policy. The envelope's
+ * data_as_of is the newest bar across all roots, so a lagging root would otherwise look fresh.
+ * @param {Ctx} ctx
+ * @param {Bar} last
+ * @returns {Freshness}
+ */
+function rootFreshness(ctx, last) {
+  const t = Date.parse(last.t);
+  if (!Number.isFinite(t)) return { state: 'invalid', age_min: null, reason: `bar time unparsable: ${last.t}` };
+  const close = Math.min(t + BAR_MS, ctx.now);
+  /** @type {AnyEnvelope} */
+  const synthetic = {
+    schema_version: 1, dataset: 'bars', generated_at: new Date(close).toISOString(), data_as_of: new Date(close).toISOString(),
+    source: 'last bar close', status: 'ok', errors: [], data: null,
+  };
+  try {
+    return classifyFreshness(synthetic, ctx.now, POLICIES.bars);
+  } catch (e) {
+    return { state: 'invalid', age_min: null, reason: `freshness check failed: ${errMsg(e)}` };
+  }
+}
+
+/**
+ * Mark price for a root from the bars envelope. Usable (for open P&L) only if both the envelope and the
+ * root's own series are fresh (or the envelope partial); `fr` is the freshness the mark is shown with.
  * @param {Ctx} ctx
  * @param {string} root
- * @returns {{price: number|null, usable: boolean, bars: Bar[]|null, spec: ContractSpec|null, reason: string}}
+ * @returns {{price: number|null, usable: boolean, bars: Bar[]|null, spec: ContractSpec|null, reason: string, fr: Freshness, symbol: string}}
  */
 function markFor(ctx, root) {
-  const spec = resolveSpec(root, ctx.contracts);
-  if (!spec) return { price: null, usable: false, bars: null, spec: null, reason: `${root} not in contracts.json` };
-  const br = barsRootFor(root, ctx.contracts);
   const f = ctx.fr.bars;
-  if (!br || !DISPLAYABLE.has(f.state)) return { price: null, usable: false, bars: null, spec, reason: `bars ${f.state.toUpperCase()}` };
+  const spec = resolveSpec(root, ctx.contracts);
+  if (!spec) return { price: null, usable: false, bars: null, spec: null, reason: `${root} not in contracts.json`, fr: f, symbol: '' };
+  const br = barsRootFor(root, ctx.contracts);
+  const symbol = br ? `${br}.c.0` : '';
+  if (!br || !DISPLAYABLE.has(f.state)) return { price: null, usable: false, bars: null, spec, reason: `bars ${f.state.toUpperCase()}`, fr: f, symbol };
   const bars = barsOf(ctx.envs.bars, br);
-  if (!bars) return { price: null, usable: false, bars: null, spec, reason: `no bars for ${br}` };
+  const last = bars?.[bars.length - 1];
+  if (!bars || !last) return { price: null, usable: false, bars: null, spec, reason: `no bars for ${br}`, fr: f, symbol };
   const price = lastClose(bars);
+  const rf = rootFreshness(ctx, last);
+  if (rf.state !== 'fresh') {
+    // The root's own series is older than the policy: show the worse (older) of the two ages.
+    const worse = (f.state === 'stale' || f.state === 'error') && (f.age_min ?? -1) >= (rf.age_min ?? -1) ? f : { ...rf, state: /** @type {FreshState} */ ('stale') };
+    return { price, usable: false, bars, spec, reason: `${br} bars ${worse.state.toUpperCase()} (last bar closed ${fmtAge(rf.age_min)} ago) — open P&L not marked`, fr: worse, symbol };
+  }
   const usable = f.state === 'fresh' || f.state === 'partial';
-  return { price, usable, bars, spec, reason: usable ? '' : `bars ${f.state.toUpperCase()} — open P&L not marked` };
+  return { price, usable, bars, spec, reason: usable ? '' : `bars ${f.state.toUpperCase()} — open P&L not marked`, fr: f, symbol };
 }
 
 /**
@@ -630,7 +666,7 @@ function markCell(ctx, m) {
   return cell({
     text: fmtPrice(m.price, m.spec.tick_size),
     known: true,
-    badge: staleBadge(ctx.fr.bars),
+    badge: staleBadge(m.fr),
     level: m.usable ? null : 'warn',
     note: last ? `last 1h close, bar ${last.t.slice(0, 16).replace('T', ' ')}Z` : '',
   });
@@ -888,7 +924,7 @@ function buildPositions(ctx) {
     if (!spec) flags.push(`${t.root} not in contracts.json`);
     if (allowed.known && Array.isArray(allowed.value) && !allowed.value.includes(t.root)) flags.push(`${t.root} not in allowed_roots`);
     const pnl = usdCell(p.cents, p.cents === null ? p.reason : '');
-    if (p.cents !== null) pnl.badge = staleBadge(ctx.fr.bars);
+    if (p.cents !== null) pnl.badge = staleBadge(p.mark.fr);
     return {
       id: t.id,
       root: t.root,
@@ -941,7 +977,7 @@ function atrCell(ctx, root) {
   return cell({
     text: `${ticks.toFixed(1)} ticks`,
     known: true,
-    badge: staleBadge(ctx.fr.bars),
+    badge: staleBadge(m.fr),
     note: `ATR(14) on 1h bars = ${fmtPrice(a, m.spec.tick_size / 100)} pts`,
   });
 }
