@@ -101,10 +101,12 @@ function renderBanner(b) {
  * @returns {Raw}
  */
 export function renderBanners(banners) {
-  const action = banners.filter((b) => b.level !== 'ok');
+  const action = banners.filter((b) => b.level === 'breach' || b.level === 'warn');
+  const unknown = banners.filter((b) => b.level === 'unknown');
   const info = banners.filter((b) => b.level === 'ok');
   return html`<section class="banners" data-live="banners" aria-label="Alerts">
-  ${action.length === 0 ? html`<p class="all-clear">${levelPill('ok', 'No alerts')}</p>` : action.map(renderBanner)}
+  ${action.length === 0 ? html`<p class="all-clear">${levelPill('ok', 'No red or amber alerts')}</p>` : action.map(renderBanner)}
+  ${unknown.length > 0 ? html`<ul class="unknownlist" aria-label="Unknown inputs">${unknown.map((b) => html`<li>${levelPill('unknown', b.title)} <span>${b.message}</span></li>`)}</ul>` : ''}
   ${info.length > 0 ? html`<ul class="infoline">${info.map((b) => html`<li>${levelPill('ok', b.title)} ${b.message}</li>`)}</ul>` : ''}
 </section>`;
 }
@@ -180,11 +182,11 @@ export function renderPositions(vm) {
     : p.rows.length === 0
       ? html`<p class="empty">${p.reason}</p>`
       : html`<div class="table-wrap"><table class="grid">
-  <thead><tr><th>ID</th><th>Root</th><th>Side</th><th class="num">Qty</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">Open P&amp;L</th><th>Notes</th></tr></thead>
+  <thead><tr><th>ID</th><th>Root</th><th>Side</th><th class="num">Qty</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">Open P&amp;L</th></tr></thead>
   <tbody>${p.rows.map((r) => html`<tr${r.flags.length ? html` class="row-breach"` : ''}>
     <td class="mono">${r.id}</td><td>${r.root}</td><td class="side-${r.side}">${r.side.toUpperCase()}</td><td class="num">${r.qty}</td>
     <td class="num">${r.entry_text}</td><td class="num">${renderCell(r.mark, { noNote: true })}</td><td class="num">${renderCell(r.pnl)}</td>
-    <td class="notes">${r.notes}${r.flags.length ? html`<span class="note">${levelPill('breach')} ${r.flags.join('; ')}</span>` : ''}</td></tr>`)}</tbody>
+    </tr>${r.notes || r.flags.length ? html`<tr class="subrow"><td colspan="7" class="notes">${r.notes ? html`<span class="note-inline">Notes: ${r.notes}</span>` : ''}${r.flags.length ? html` ${levelPill('breach')} ${r.flags.join('; ')}` : ''}</td></tr>` : ''}`)}</tbody>
 </table></div>`;
   return html`<section class="panel" id="p-positions" data-live="positions">
   <h2>Positions</h2>
@@ -221,7 +223,7 @@ export function renderSizerForm(s) {
   <label class="field"><span>Risk budget $</span><input name="risk_budget_usd" type="number" inputmode="decimal" min="0" step="any" value="${numVal(f.risk_budget_usd)}" placeholder="e.g. 250"></label>
   <label class="field"><span>Stop (ticks)</span><input name="stop_ticks" type="number" inputmode="numeric" min="1" step="1" value="${numVal(f.stop_ticks)}" placeholder="e.g. 16"></label>
   <label class="field"><span>Fee / contract RT $</span><input name="fee_per_contract_usd" type="number" inputmode="decimal" min="0" step="any" value="${numVal(f.fee_per_contract_usd)}" placeholder="0 if none"></label>
-  <fieldset class="field seg"><legend>Hold</legend>${HOLD_OPTIONS.map((h) => html`<label class="seg-opt"><input type="radio" name="hold" value="${h.value}"${h.value === f.hold ? html` checked` : ''}><span>${h.label}</span></label>`)}</fieldset>
+  <fieldset class="field seg"><legend>Hold</legend><div class="seg-row">${HOLD_OPTIONS.map((h) => html`<label class="seg-opt"><input type="radio" name="hold" value="${h.value}"${h.value === f.hold ? html` checked` : ''}><span>${h.label}</span></label>`)}</div></fieldset>
 </form>`;
 }
 
