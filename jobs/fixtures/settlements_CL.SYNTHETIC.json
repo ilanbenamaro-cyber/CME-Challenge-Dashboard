@@ -1,0 +1,72 @@
+{
+  "_comment": "SYNTHETIC fixture: invented shape and made-up prices for parser tests and dry run. Not CME data; the real payload shape is UNVERIFIED.",
+  "tradeDate": "09/29/2026",
+  "settlements": [
+    {
+      "month": "OCT 26",
+      "open": "-",
+      "high": "-",
+      "low": "-",
+      "last": "-",
+      "change": "UNCH",
+      "settle": "70.12",
+      "volume": "0",
+      "openInterest": "0"
+    },
+    {
+      "month": "NOV 26",
+      "open": "-",
+      "high": "-",
+      "low": "-",
+      "last": "-",
+      "change": "UNCH",
+      "settle": "70.24",
+      "volume": "0",
+      "openInterest": "0"
+    },
+    {
+      "month": "DEC 26",
+      "open": "-",
+      "high": "-",
+      "low": "-",
+      "last": "-",
+      "change": "UNCH",
+      "settle": "70.36",
+      "volume": "0",
+      "openInterest": "0"
+    },
+    {
+      "month": "JAN 27",
+      "open": "-",
+      "high": "-",
+      "low": "-",
+      "last": "-",
+      "change": "UNCH",
+      "settle": "70.48",
+      "volume": "0",
+      "openInterest": "0"
+    },
+    {
+      "month": "FEB 27",
+      "open": "-",
+      "high": "-",
+      "low": "-",
+      "last": "-",
+      "change": "UNCH",
+      "settle": "-",
+      "volume": "0",
+      "openInterest": "0"
+    },
+    {
+      "month": "Total",
+      "open": "",
+      "high": "",
+      "low": "",
+      "last": "",
+      "change": "",
+      "settle": "",
+      "volume": "0",
+      "openInterest": "0"
+    }
+  ]
+}
