@@ -2,13 +2,15 @@
 /** @typedef {import('./types.mjs').RuleSet} RuleSet */
 
 import { ruleValue } from './rules.mjs';
-import { ctDate, ctWallToMs } from './time.mjs';
+import { ctWallToMs, tradeDate } from './time.mjs';
 
 /** Minutes before flatten time at which the banner turns amber. Dashboard threshold. */
 export const FLATTEN_WARN_MIN = 30;
 
 /**
- * Flatten banner. minutes_left = floor((ctWallToMs(ctDate(now), flatten) - now) / 60000).
+ * Flatten banner. minutes_left = floor((ctWallToMs(tradeDate(now), flatten) - now) / 60000).
+ * Anchored to the CME trade date (rolls at 17:00 CT, weekend -> Monday), not the calendar date, so the
+ * banner does not flip at midnight and an evening-session position counts toward the next day's flatten (G3 P1-2).
  * unknown if flatten_time_ct is unknown (value null).
  * With open positions: minutes_left <= 0 -> breach; <= FLATTEN_WARN_MIN -> warn; else ok.
  * Without open positions: ok (message still states the flatten time).
@@ -27,7 +29,7 @@ export function flattenBanner(nowMs, rules, hasOpenPositions) {
   /** @type {number} */
   let target;
   try {
-    target = ctWallToMs(ctDate(nowMs), hhmm);
+    target = ctWallToMs(tradeDate(nowMs), hhmm);
   } catch {
     return { level: 'unknown', message: `Flatten time UNKNOWN (malformed rule value "${String(hhmm)}")`, value: null };
   }
