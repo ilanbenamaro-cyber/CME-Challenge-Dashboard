@@ -481,7 +481,8 @@ function calendarOf(env) {
  * @property {SheetResult|null} sheet
  * @property {Trade[]|null} trades       null = Sheet data unavailable
  * @property {string[]} tradeRowErrors
- * @property {Trade[]|null} open
+ * @property {Trade[]|null} open        null = the set of open positions is UNKNOWN (no Sheet, or any invalid Trades row)
+ * @property {string} openWhy            why `open` is null ('' when known)
  * @property {'initial'|'maintenance'|null} basis
  * @property {MarginRow[]|null} cmeRows
  * @property {boolean} cmeFresh
@@ -537,6 +538,11 @@ function buildCtx(inp) {
   const rowErrors = inp.sheet?.rowErrors ?? [];
   const tradeRowErrors = rowErrors.filter((e) => e.startsWith('Trades row '));
   const basisRule = ruleValue(rs, 'margin_basis');
+  // Any rejected Trades row could be an open position, so the open set is only known when every row is valid.
+  const n = tradeRowErrors.length;
+  const openWhy = trades === null
+    ? (frTyped.sheet.state === 'missing' ? 'Sheet not loaded' : `Sheet ${frTyped.sheet.state}: ${frTyped.sheet.reason}`)
+    : n > 0 ? `open positions UNKNOWN (${n} invalid Sheet row${n === 1 ? '' : 's'})` : '';
   const basis = basisRule.known && (basisRule.value === 'initial' || basisRule.value === 'maintenance') ? basisRule.value : null;
 
   return {
@@ -550,7 +556,8 @@ function buildCtx(inp) {
     sheet: inp.sheet,
     trades,
     tradeRowErrors,
-    open: trades ? trades.filter((t) => t.exit === null) : null,
+    open: trades && n === 0 ? trades.filter((t) => t.exit === null) : null,
+    openWhy,
     basis,
     cmeRows: marginRowsOf(inp.envs.margins ?? null),
     cmeFresh: frTyped.margins.state === 'fresh',
@@ -677,7 +684,7 @@ function computeMoney(ctx) {
   // Open P&L.
   let open = /** @type {number|null} */ (null);
   let openReason = '';
-  if (ctx.open === null) openReason = sheetWhy;
+  if (ctx.open === null) openReason = ctx.openWhy;
   else {
     let sum = 0;
     for (const t of ctx.open) {
@@ -716,7 +723,7 @@ function computeMoney(ctx) {
   // Margin in use by open positions at the selected hold multiplier.
   let marginUsed = /** @type {number|null} */ (null);
   let marginReason = '';
-  if (ctx.open === null) marginReason = sheetWhy;
+  if (ctx.open === null) marginReason = ctx.openWhy;
   else if (ctx.open.length === 0) marginUsed = 0;
   else {
     const mult = holdMultiplier(ctx);
@@ -823,7 +830,7 @@ function buildPositions(ctx) {
   const maxRule = ruleValue(ctx.rs, 'max_contracts');
   const allowed = ruleValue(ctx.rs, 'allowed_roots');
   if (ctx.open === null) {
-    const why = ctx.fr.sheet.reason;
+    const why = ctx.trades === null ? ctx.fr.sheet.reason : ctx.openWhy;
     return { known: false, reason: `Positions UNKNOWN — ${why}`, rows: [], std_equiv: unknownCell(why) };
   }
   /** @type {PositionRow[]} */
@@ -1076,13 +1083,22 @@ function buildCalendar(ctx) {
 }
 
 /**
+ * Open rows among the valid Trades rows (a lower bound when some rows are invalid).
+ * @param {Ctx} ctx
+ * @returns {Trade[]}
+ */
+function openKnownRows(ctx) {
+  return ctx.open ?? (ctx.trades ?? []).filter((t) => t.exit === null);
+}
+
+/**
  * Open-position roots ∪ watched roots (watched order first).
  * @param {Ctx} ctx
  * @returns {string[]}
  */
 function unionRoots(ctx) {
   const out = [...ctx.settings.watched_roots];
-  for (const t of ctx.open ?? []) if (!out.includes(t.root)) out.push(t.root);
+  for (const t of openKnownRows(ctx)) if (!out.includes(t.root)) out.push(t.root);
   return out;
 }
 
@@ -1172,13 +1188,13 @@ function buildBanners(inp, ctx, account, positions) {
   const out = [];
 
   // Flatten.
+  // Unknown open positions are treated as open for the timing text, but the banner is never ok/flat.
   const positionsUnknown = ctx.open === null;
   const hasOpen = ctx.open !== null && ctx.open.length > 0;
   const fb = flattenBanner(ctx.now, ctx.rs, positionsUnknown ? true : hasOpen);
-  if (positionsUnknown && (fb.level === 'warn' || fb.level === 'breach')) {
-    out.push({ level: 'unknown', kind: 'flatten', title: 'Flatten', message: `${fb.message} — open positions UNKNOWN (Sheet unavailable)`, details: [] });
-  } else if (positionsUnknown && fb.level === 'ok') {
-    out.push({ level: 'ok', kind: 'flatten', title: 'Flatten', message: `${fb.message} — open positions UNKNOWN`, details: [] });
+  if (positionsUnknown) {
+    const why = ctx.trades === null ? 'open positions UNKNOWN (Sheet unavailable)' : ctx.openWhy;
+    out.push({ level: 'unknown', kind: 'flatten', title: 'Flatten', message: `${fb.message} — ${why}`, details: [] });
   } else {
     out.push({ level: fb.level, kind: 'flatten', title: fb.level === 'breach' ? 'FLATTEN NOW' : 'Flatten', message: fb.message, details: [] });
   }
@@ -1187,7 +1203,7 @@ function buildBanners(inp, ctx, account, positions) {
   const cal = DISPLAYABLE.has(ctx.fr.calendar.state) ? calendarOf(ctx.envs.calendar) : null;
   for (const root of unionRoots(ctx)) {
     const b = expiryBanner(root, nextExpiration(root, ctx.today, ctx.contracts, cal ? cal.expirations : []), ctx.today, ctx.settings.expiry_warn_days);
-    const isOpen = (ctx.open ?? []).some((t) => t.root === root);
+    const isOpen = openKnownRows(ctx).some((t) => t.root === root);
     if (b.level !== 'ok') {
       out.push({ level: b.level, kind: 'expiry', title: `Expiry ${root}${isOpen ? ' (open position)' : ''}`, message: b.message, details: [] });
     }
@@ -1241,7 +1257,7 @@ function buildBanners(inp, ctx, account, positions) {
       level: 'warn',
       kind: 'sheet',
       title: `Sheet: ${rowErrors.length} invalid row${rowErrors.length === 1 ? '' : 's'}`,
-      message: tradeBad ? "Fix these rows — today's P&L is UNKNOWN until then" : 'Fix these rows in the Sheet',
+      message: tradeBad ? "Fix these rows — today's P&L and open positions are UNKNOWN until then" : 'Fix these rows in the Sheet',
       details: rowErrors.slice(0, 8).concat(rowErrors.length > 8 ? [`…and ${rowErrors.length - 8} more`] : []),
     });
   }
