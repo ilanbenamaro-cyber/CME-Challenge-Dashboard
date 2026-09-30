@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f4f6f8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Read-only research and risk console for a CME futures challenge.">
+<title>CME Challenge Risk</title>
+<link rel="stylesheet" href="css/app.css">
+<script type="module" src="js/main.mjs"></script>
+</head>
+<body>
+<main id="app" class="app" aria-live="polite">
+  <section class="panel boot" id="boot">
+    <h1 class="boot-title">CME Challenge Risk</h1>
+    <p class="boot-msg">Loading dashboard&hellip;</p>
+    <p class="boot-hint">If this message stays, the dashboard script failed to load. Reload the page; if it persists, check the browser console.</p>
+  </section>
+  <noscript>
+    <section class="panel fatal">
+      <h2>JavaScript is required</h2>
+      <p>This dashboard renders in the browser. Enable JavaScript to see risk data.</p>
+    </section>
+  </noscript>
+</main>
+</body>
+</html>
