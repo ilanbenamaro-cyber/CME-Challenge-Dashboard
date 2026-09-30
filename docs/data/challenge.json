@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "dataset": "challenge",
+  "generated_at": "2026-09-30T00:00:00Z",
+  "data_as_of": null,
+  "source": "CME challenge daily results (UNVERIFIED source)",
+  "status": "error",
+  "errors": [
+    "not yet fetched"
+  ],
+  "data": null
+}

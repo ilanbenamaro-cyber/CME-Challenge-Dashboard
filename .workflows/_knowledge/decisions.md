@@ -7,3 +7,5 @@
   `manual` and must be entered in docs/data/calendar.json. Calendar entries override computed dates.
 - 2026-09-30 ADR-003: Calendar is human-curated (no bot producer); freshness policy intraday 14 days.
 - 2026-09-30 ADR-004: Margins fall back to an optional Sheet `Margins` tab when the CME margins envelope is not fresh.
+- 2026-09-30 ADR-005: skip data writes when only generated_at changes (jobs/common/publish.py compares with the file
+  on disk ignoring generated_at; refresh prints "<dataset>: unchanged"). Site freshness uses data_as_of.

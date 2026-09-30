@@ -1,0 +1,49 @@
+{
+  "_comment": "SYNTHETIC source config for --dry-run and tests. URLs under /SYNTHETIC/ do not exist; jobs.common.fakes.fixture_fetch serves the fixture files listed in routes.SYNTHETIC.json.",
+  "settlements": {
+    "verified": false,
+    "url_template": "https://www.cmegroup.com/SYNTHETIC/settlements/{product_id}.json",
+    "products": {
+      "ES": {"product_id": "ES", "verified": false},
+      "NQ": {"product_id": "NQ", "verified": false},
+      "CL": {"product_id": "CL", "verified": false},
+      "GC": {"product_id": "GC", "verified": false}
+    },
+    "hints": {
+      "rows_path": ["settlements"],
+      "trade_date_path": ["tradeDate"],
+      "trade_date_formats": ["%m/%d/%Y", "%Y-%m-%d"],
+      "month_field": "month",
+      "settle_field": "settle",
+      "max_contracts": 4
+    }
+  },
+  "margins": {
+    "verified": false,
+    "url": "https://www.cmegroup.com/SYNTHETIC/margins.json",
+    "hints": {
+      "rows_path": ["rows"],
+      "as_of_path": ["asOf"],
+      "as_of_formats": ["%Y-%m-%d", "%m/%d/%Y"],
+      "root_field": "root",
+      "initial_field": "initial",
+      "maintenance_field": "maintenance"
+    }
+  },
+  "challenge": {
+    "verified": false,
+    "url": "https://www.cmegroup.com/SYNTHETIC/challenge.html",
+    "account": "SYNTH-0001",
+    "hints": {
+      "table_selector": "table",
+      "columns": {
+        "date": "Date",
+        "account": "Account",
+        "pnl_usd": "P&L",
+        "balance_usd": "Balance",
+        "rank": "Rank"
+      },
+      "date_formats": ["%m/%d/%Y", "%Y-%m-%d"]
+    }
+  }
+}

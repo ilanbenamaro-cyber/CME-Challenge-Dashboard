@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "dataset": "settlements",
+  "generated_at": "2026-09-30T00:00:00Z",
+  "data_as_of": null,
+  "source": "CME settlements (www.cmegroup.com; UNVERIFIED source)",
+  "status": "error",
+  "errors": [
+    "not yet fetched"
+  ],
+  "data": null
+}
