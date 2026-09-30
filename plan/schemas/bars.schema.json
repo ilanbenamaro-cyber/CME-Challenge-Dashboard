@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bars.schema.json",
+  "title": "bars envelope (D7)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "dataset",
+    "generated_at",
+    "data_as_of",
+    "source",
+    "status",
+    "errors",
+    "data"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "dataset": {
+      "const": "bars"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "data_as_of": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "partial",
+        "error"
+      ]
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "data": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "roots",
+            "aliases",
+            "cost_usd"
+          ],
+          "properties": {
+            "roots": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "symbol",
+                  "bars"
+                ],
+                "properties": {
+                  "symbol": {
+                    "type": "string"
+                  },
+                  "bars": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "t",
+                        "o",
+                        "h",
+                        "l",
+                        "c",
+                        "v"
+                      ],
+                      "properties": {
+                        "t": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "o": {
+                          "type": "number"
+                        },
+                        "h": {
+                          "type": "number"
+                        },
+                        "l": {
+                          "type": "number"
+                        },
+                        "c": {
+                          "type": "number"
+                        },
+                        "v": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "aliases": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "cost_usd": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2
+            }
+          }
+        }
+      ]
+    }
+  }
+}

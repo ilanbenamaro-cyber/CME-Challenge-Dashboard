@@ -1,0 +1,29 @@
+{
+  "fn": "tradePnlCents(trade, spec, markPrice?)",
+  "cases": [
+    {"id": "P1", "trade": {"id":"P1","root":"ES","side":"long","qty":2,"entry":4500.25,"exit":4510.75,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":"2026-09-29T10:00:00-05:00","fees_usd":9.00},
+     "calc": "18043-18001=42 ticks; 42*1250*2=105000; fees 900", "expect": {"gross_cents":105000,"fees_cents":900,"net_cents":104100}},
+    {"id": "P2", "trade": {"id":"P2","root":"MNQ","side":"short","qty":3,"entry":15000.00,"exit":15012.25,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":"2026-09-29T10:00:00-05:00","fees_usd":2.22},
+     "calc": "+49 ticks against a short: -(49*50*3)=-7350; fees 222", "expect": {"gross_cents":-7350,"fees_cents":222,"net_cents":-7572}},
+    {"id": "P3", "trade": {"id":"P3","root":"CL","side":"long","qty":1,"entry":78.43,"exit":78.19,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":"2026-09-29T10:00:00-05:00","fees_usd":4.80},
+     "calc": "7819-7843=-24 ticks; -24*1000=-24000; fees 480", "expect": {"gross_cents":-24000,"fees_cents":480,"net_cents":-24480}},
+    {"id": "P4", "trade": {"id":"P4","root":"MGC","side":"short","qty":5,"entry":1950.3,"exit":1948.1,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":"2026-09-29T10:00:00-05:00","fees_usd":0},
+     "calc": "19481-19503=-22 ticks, short => +22*100*5=11000", "expect": {"gross_cents":11000,"fees_cents":0,"net_cents":11000}},
+    {"id": "P5", "trade": {"id":"P5","root":"GC","side":"long","qty":1,"entry":2650.0,"exit":2650.0,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":"2026-09-29T10:00:00-05:00","fees_usd":5.00},
+     "calc": "0 ticks; fees 500", "expect": {"gross_cents":0,"fees_cents":500,"net_cents":-500}},
+    {"id": "P6", "trade": {"id":"P6","root":"MES","side":"long","qty":10,"entry":5800.00,"exit":5799.75,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":"2026-09-29T10:00:00-05:00","fees_usd":6.20},
+     "calc": "-1 tick*125*10=-1250; fees 620", "expect": {"gross_cents":-1250,"fees_cents":620,"net_cents":-1870}},
+    {"id": "P7", "trade": {"id":"P7","root":"NQ","side":"long","qty":1,"entry":20000.00,"exit":null,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":null,"fees_usd":4.20},
+     "mark": 20010.50, "calc": "open, marked: 80042-80000=42 ticks*500=21000; fees 420", "expect": {"gross_cents":21000,"fees_cents":420,"net_cents":20580}},
+    {"id": "P8", "trade": {"id":"P8","root":"MCL","side":"short","qty":2,"entry":70.05,"exit":70.00,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":"2026-09-29T10:00:00-05:00","fees_usd":2.00},
+     "calc": "-5 ticks, short => +5*100*2=1000; fees 200", "expect": {"gross_cents":1000,"fees_cents":200,"net_cents":800}}
+  ],
+  "errors": [
+    {"id": "E1", "trade": {"id":"E1","root":"ES","side":"long","qty":1,"entry":4500.10,"exit":4501.00,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":"2026-09-29T10:00:00-05:00","fees_usd":0}, "why": "entry off the 0.25 tick grid"},
+    {"id": "E2", "trade": {"id":"E2","root":"ES","side":"long","qty":1.5,"entry":4500.00,"exit":4501.00,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":"2026-09-29T10:00:00-05:00","fees_usd":0}, "why": "non-integer qty"},
+    {"id": "E3", "trade": {"id":"E3","root":"ES","side":"long","qty":1,"entry":4500.00,"exit":4501.00,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":"2026-09-29T10:00:00-05:00","fees_usd":-1}, "why": "negative fees"},
+    {"id": "E4", "trade": {"id":"E4","root":"ES","side":"long","qty":1,"entry":4500.00,"exit":null,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":null,"fees_usd":0}, "why": "open trade without mark"},
+    {"id": "E5", "trade": {"id":"E5","root":"ES","side":"long","qty":0,"entry":4500.00,"exit":4501.00,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":"2026-09-29T10:00:00-05:00","fees_usd":0}, "why": "zero qty"},
+    {"id": "E6", "trade": {"id":"E6","root":"ES","side":"long","qty":1,"entry":4500.00,"exit":4501.00,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":"2026-09-29T10:00:00-05:00","fees_usd":0}, "spec_root": "NQ", "why": "spec/trade root mismatch"}
+  ]
+}

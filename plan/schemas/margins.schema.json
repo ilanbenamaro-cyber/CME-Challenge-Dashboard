@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "margins.schema.json",
+  "title": "margins envelope (D7)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "dataset",
+    "generated_at",
+    "data_as_of",
+    "source",
+    "status",
+    "errors",
+    "data"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "dataset": {
+      "const": "margins"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "data_as_of": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "partial",
+        "error"
+      ]
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "data": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "rows"
+          ],
+          "properties": {
+            "rows": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/marginRow"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "marginRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root",
+        "initial_usd",
+        "maintenance_usd",
+        "as_of"
+      ],
+      "properties": {
+        "root": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{1,4}$"
+        },
+        "initial_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "maintenance_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "as_of": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

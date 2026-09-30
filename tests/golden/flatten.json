@@ -1,0 +1,16 @@
+{
+  "fn": "flattenBanner(nowMs, rules, hasOpenPositions)",
+  "rule": {"flatten_time_ct": {"value": "15:10", "source": "TEST FIXTURE"}},
+  "cases": [
+    {"id": "L1", "now": "2026-09-30T19:00:00Z", "open": true,  "calc": "14:00 CDT -> 70", "expect": {"level":"ok","value":70}},
+    {"id": "L2", "now": "2026-09-30T19:45:00Z", "open": true,  "calc": "14:45 CDT -> 25", "expect": {"level":"warn","value":25}},
+    {"id": "L3", "now": "2026-09-30T20:10:00Z", "open": true,  "calc": "15:10 CDT -> 0", "expect": {"level":"breach","value":0}},
+    {"id": "L4", "now": "2026-09-30T20:30:00Z", "open": true,  "calc": "-20", "expect": {"level":"breach","value":-20}},
+    {"id": "L5", "now": "2026-09-30T20:30:00Z", "open": false, "calc": "flat -> ok", "expect": {"level":"ok","value":-20}},
+    {"id": "L6", "now": "2026-12-01T20:00:00Z", "open": true,  "calc": "14:00 CST; 15:10 CST = 21:10Z -> 70", "expect": {"level":"ok","value":70}},
+    {"id": "L7", "now": "2026-09-30T19:40:30Z", "open": true,  "calc": "floor(29.5)=29", "expect": {"level":"warn","value":29}},
+    {"id": "L8", "now": "2026-09-30T19:39:59Z", "open": true,  "calc": "floor(30.0167)=30 <= 30", "expect": {"level":"warn","value":30}},
+    {"id": "L9", "now": "2026-09-30T19:39:00Z", "open": true,  "calc": "31", "expect": {"level":"ok","value":31}},
+    {"id": "L10","now": "2026-09-30T19:00:00Z", "open": true,  "rule_override": {"flatten_time_ct": {"value": null, "source": null}}, "expect": {"level":"unknown","value":null}}
+  ]
+}

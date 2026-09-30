@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "dataset": "calendar",
+  "generated_at": "2026-09-30T00:00:00Z",
+  "data_as_of": "2026-09-30T00:00:00Z",
+  "source": "human-curated (docs/data/calendar.json)",
+  "status": "ok",
+  "errors": [],
+  "data": {
+    "events": [
+      {"date": "2026-10-28", "time_ct": "13:00", "title": "FOMC statement", "impact": "high", "source": "federalreserve.gov FOMC calendar — UNVERIFIED by build session, confirm"},
+      {"date": "2026-12-09", "time_ct": "13:00", "title": "FOMC statement", "impact": "high", "source": "federalreserve.gov FOMC calendar — UNVERIFIED by build session, confirm"}
+    ],
+    "expirations": []
+  }
+}

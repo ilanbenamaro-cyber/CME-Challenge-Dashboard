@@ -1,0 +1,26 @@
+{
+  "fn": "classifyFreshness(env, nowMs, policy)",
+  "note": "env fields not listed default to {schema_version:1, dataset:'x', generated_at: data_as_of or now, source:'test', status:'ok', errors:[], data:{}}. CDT = UTC-5, CST = UTC-6.",
+  "cases": [
+    {"id": "F1", "now": "2026-09-30T15:00:00Z", "policy": {"kind":"daily"}, "env": null, "expect": {"state":"missing","age_min":null}},
+    {"id": "F2", "now": "2026-09-30T15:00:00Z", "policy": {"kind":"daily"}, "env": {"data_as_of":"2026-09-29T22:30:00Z"}, "calc": "CT date 09-29 >= prevWeekday(09-30)=09-29; age 990", "expect": {"state":"fresh","age_min":990}},
+    {"id": "F3", "now": "2026-09-30T15:00:00Z", "policy": {"kind":"daily"}, "env": {"data_as_of":"2026-09-28T22:30:00Z"}, "calc": "09-28 < 09-29", "expect": {"state":"stale","age_min":2430}},
+    {"id": "F4", "now": "2026-09-28T15:00:00Z", "policy": {"kind":"daily"}, "env": {"data_as_of":"2026-09-25T22:30:00Z"}, "calc": "Monday: prevWeekday = Fri 09-25", "expect": {"state":"fresh","age_min":3870}},
+    {"id": "F5", "now": "2026-09-30T15:00:00Z", "policy": {"kind":"daily"}, "env": {"data_as_of":"2026-09-29T22:30:00Z","status":"error","errors":["HTTP 403"]}, "expect": {"state":"error","age_min":990}},
+    {"id": "F6", "now": "2026-09-30T15:00:00Z", "policy": {"kind":"daily"}, "env": {"data_as_of":null,"status":"error","errors":["never succeeded"],"data":null}, "expect": {"state":"error","age_min":null}},
+    {"id": "F7", "now": "2026-09-30T15:00:00Z", "policy": {"kind":"daily"}, "env": {"schema_version":2,"data_as_of":"2026-09-29T22:30:00Z"}, "expect": {"state":"invalid","age_min":null}},
+    {"id": "F8", "now": "2026-09-30T15:00:00Z", "policy": {"kind":"daily"}, "env": {"data_as_of":"2026-09-30T15:06:00Z"}, "calc": "6 min in future > 5 skew", "expect": {"state":"invalid","age_min":null}},
+    {"id": "F9", "now": "2026-09-30T15:00:00Z", "policy": {"kind":"daily"}, "env": {"data_as_of":"2026-09-30T15:04:00Z"}, "calc": "4 min future within skew; floor(-4)=-4", "expect": {"state":"fresh","age_min":-4}},
+    {"id": "F10", "now": "2026-09-30T15:00:00Z", "policy": {"kind":"daily"}, "env": {"data_as_of":"2026-09-29T22:30:00Z","status":"partial","errors":["MNQ missing"]}, "expect": {"state":"partial","age_min":990}},
+    {"id": "F11", "now": "2026-09-30T15:00:00Z", "policy": {"kind":"daily"}, "env": {"data_as_of":"2026-09-28T22:30:00Z","status":"partial"}, "calc": "stale beats partial", "expect": {"state":"stale","age_min":2430}},
+    {"id": "F12", "now": "2026-09-30T15:00:00Z", "policy": {"kind":"intraday","max_age_min":180}, "env": {"data_as_of":"2026-09-30T13:00:00Z"}, "expect": {"state":"fresh","age_min":120}},
+    {"id": "F13", "now": "2026-09-30T15:00:00Z", "policy": {"kind":"intraday","max_age_min":180}, "env": {"data_as_of":"2026-09-30T11:59:00Z"}, "expect": {"state":"stale","age_min":181}},
+    {"id": "F14", "now": "2026-09-30T15:00:00Z", "policy": {"kind":"intraday","max_age_min":180}, "env": {"data_as_of":"2026-09-30T12:00:00Z"}, "calc": "exactly 180 -> fresh", "expect": {"state":"fresh","age_min":180}},
+    {"id": "F15", "now": "2026-09-27T15:00:00Z", "policy": {"kind":"intraday","max_age_min":180}, "env": {"data_as_of":"2026-09-25T20:00:00Z"}, "calc": "Sun 10:00 CDT in weekend close; as_of = Fri 15:00 CDT", "expect": {"state":"fresh","age_min":2580}},
+    {"id": "F16", "now": "2026-09-27T15:00:00Z", "policy": {"kind":"intraday","max_age_min":180}, "env": {"data_as_of":"2026-09-25T19:59:00Z"}, "calc": "before Fri 15:00 CDT", "expect": {"state":"stale","age_min":2581}},
+    {"id": "F17", "now": "2026-09-27T23:00:00Z", "policy": {"kind":"intraday","max_age_min":180}, "env": {"data_as_of":"2026-09-25T20:00:00Z"}, "calc": "Sun 18:00 CDT: market open, age 3060", "expect": {"state":"stale","age_min":3060}},
+    {"id": "F18", "now": "2026-09-25T21:30:00Z", "policy": {"kind":"intraday","max_age_min":180}, "env": {"data_as_of":"2026-09-25T20:00:00Z"}, "calc": "Fri 16:30 CDT inside close; age 90 anyway", "expect": {"state":"fresh","age_min":90}},
+    {"id": "F19", "now": "2026-09-30T15:00:00Z", "policy": {"kind":"daily"}, "env": {"data_as_of":"not-a-date"}, "expect": {"state":"invalid","age_min":null}},
+    {"id": "F20", "now": "2026-12-05T18:00:00Z", "policy": {"kind":"intraday","max_age_min":180}, "env": {"data_as_of":"2026-12-04T21:00:00Z"}, "calc": "Sat 12:00 CST; as_of Fri 15:00 CST (21:00Z) -> fresh; age 1260", "expect": {"state":"fresh","age_min":1260}}
+  ]
+}

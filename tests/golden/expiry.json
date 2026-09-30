@@ -1,0 +1,31 @@
+{
+  "thirdFriday": [
+    {"year": 2026, "month": 12, "expect": "2026-12-18"},
+    {"year": 2027, "month": 3,  "expect": "2027-03-19"},
+    {"year": 2026, "month": 9,  "expect": "2026-09-18"},
+    {"year": 2026, "month": 6,  "expect": "2026-06-19"},
+    {"year": 2026, "month": 2,  "expect": "2026-02-20"}
+  ],
+  "nextExpiration": [
+    {"id": "X1", "root": "ES",  "today": "2026-09-30", "calendar": [], "expect": {"root":"ES","contract_code":"ESZ26","date":"2026-12-18","source":"computed: third Friday (holiday-unadjusted)"}},
+    {"id": "X2", "root": "ES",  "today": "2026-09-18", "calendar": [], "calc": "on expiry day -> same contract", "expect": {"root":"ES","contract_code":"ESU26","date":"2026-09-18","source":"computed: third Friday (holiday-unadjusted)"}},
+    {"id": "X3", "root": "ES",  "today": "2026-12-19", "calendar": [], "expect": {"root":"ES","contract_code":"ESH27","date":"2027-03-19","source":"computed: third Friday (holiday-unadjusted)"}},
+    {"id": "X4", "root": "MES", "today": "2026-09-30", "calendar": [], "expect": {"root":"MES","contract_code":"MESZ26","date":"2026-12-18","source":"computed: third Friday (holiday-unadjusted)"}},
+    {"id": "X5", "root": "CL",  "today": "2026-09-30", "calendar": [], "calc": "manual rule, no entry", "expect": null},
+    {"id": "X6", "root": "CL",  "today": "2026-09-30",
+     "calendar": [{"root":"CL","contract_code":"CLZ26","date":"2026-11-19","source":"fixture"},{"root":"CL","contract_code":"CLX26","date":"2026-10-20","source":"fixture"},{"root":"CL","contract_code":"CLV26","date":"2026-09-22","source":"fixture"}],
+     "calc": "earliest entry >= today", "expect": {"root":"CL","contract_code":"CLX26","date":"2026-10-20","source":"fixture"}},
+    {"id": "X7", "root": "ES",  "today": "2026-09-30", "calendar": [{"root":"ES","contract_code":"ESZ26","date":"2026-12-17","source":"override fixture"}],
+     "calc": "calendar overrides computed", "expect": {"root":"ES","contract_code":"ESZ26","date":"2026-12-17","source":"override fixture"}},
+    {"id": "X8", "root": "ZZ",  "today": "2026-09-30", "calendar": [], "expect": null},
+    {"id": "X9", "root": "CL",  "today": "2026-12-01", "calendar": [{"root":"CL","contract_code":"CLX26","date":"2026-10-20","source":"fixture"}], "calc": "all entries past -> unknown", "expect": null}
+  ],
+  "expiryBanner": [
+    {"id": "B1", "root": "ES", "exp": {"root":"ES","contract_code":"ESZ26","date":"2026-12-18","source":"s"}, "today": "2026-09-30", "warnDays": 5, "expect": {"level":"ok","value":79}},
+    {"id": "B2", "root": "ES", "exp": {"root":"ES","contract_code":"ESZ26","date":"2026-12-18","source":"s"}, "today": "2026-12-14", "warnDays": 5, "expect": {"level":"warn","value":4}},
+    {"id": "B3", "root": "ES", "exp": {"root":"ES","contract_code":"ESZ26","date":"2026-12-18","source":"s"}, "today": "2026-12-13", "warnDays": 5, "expect": {"level":"warn","value":5}},
+    {"id": "B4", "root": "ES", "exp": {"root":"ES","contract_code":"ESZ26","date":"2026-12-18","source":"s"}, "today": "2026-12-12", "warnDays": 5, "expect": {"level":"ok","value":6}},
+    {"id": "B5", "root": "ES", "exp": {"root":"ES","contract_code":"ESZ26","date":"2026-12-18","source":"s"}, "today": "2026-12-18", "warnDays": 5, "expect": {"level":"breach","value":0}},
+    {"id": "B6", "root": "CL", "exp": null, "today": "2026-09-30", "warnDays": 5, "expect": {"level":"unknown","value":null}}
+  ]
+}

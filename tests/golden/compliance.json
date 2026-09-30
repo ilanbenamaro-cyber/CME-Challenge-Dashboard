@@ -1,0 +1,28 @@
+{
+  "rules_fixture_ref": "sizer.json#rules_fixture (daily_loss_cap_usd 1500, max_drawdown_usd 2000)",
+  "daily_loss": [
+    {"id": "C1", "realized_cents": -120000, "open_cents": 0, "calc": "loss 120000/150000=0.8 -> warn", "expect": {"level":"warn","used_ratio":0.8,"used_cents":120000,"limit_cents":150000,"remaining_cents":30000}},
+    {"id": "C2", "realized_cents": -100000, "open_cents": -50000, "calc": "loss 150000 = cap -> breach", "expect": {"level":"breach","used_ratio":1,"used_cents":150000,"limit_cents":150000,"remaining_cents":0}},
+    {"id": "C3", "realized_cents": 20000, "open_cents": -5000, "calc": "net +15000 -> loss 0", "expect": {"level":"ok","used_ratio":0,"used_cents":0,"limit_cents":150000,"remaining_cents":150000}},
+    {"id": "C4", "realized_cents": -50000, "open_cents": null, "calc": "open P&L unmarkable", "expect": {"level":"unknown","used_ratio":null,"used_cents":null,"limit_cents":150000,"remaining_cents":null}},
+    {"id": "C5", "realized_cents": -50000, "open_cents": 0, "rule_overrides": {"daily_loss_cap_usd": {"value": null, "source": null}}, "calc": "cap unknown", "expect": {"level":"unknown","used_ratio":null,"used_cents":50000,"limit_cents":null,"remaining_cents":null}},
+    {"id": "C6", "realized_cents": -160000, "open_cents": 0, "calc": "160000/150000=1.0667 -> breach, remaining floored at 0", "expect": {"level":"breach","used_ratio":1.0666666666666667,"used_cents":160000,"limit_cents":150000,"remaining_cents":0}},
+    {"id": "C7", "realized_cents": -119999, "open_cents": 0, "calc": "0.79999 -> ok", "expect": {"level":"ok","used_ratio":0.7999933333333333,"used_cents":119999,"limit_cents":150000,"remaining_cents":30001}}
+  ],
+  "margin": [
+    {"id": "M1", "used_cents": 800000, "available_cents": 1000000, "expect": {"level":"warn","used_ratio":0.8,"used_cents":800000,"limit_cents":1000000,"remaining_cents":200000}},
+    {"id": "M2", "used_cents": 1000001, "available_cents": 1000000, "expect": {"level":"breach","used_ratio":1.000001,"used_cents":1000001,"limit_cents":1000000,"remaining_cents":0}},
+    {"id": "M3", "used_cents": 1000000, "available_cents": 1000000, "calc": "equal is not > -> warn", "expect": {"level":"warn","used_ratio":1,"used_cents":1000000,"limit_cents":1000000,"remaining_cents":0}},
+    {"id": "M4", "used_cents": null, "available_cents": 1000000, "expect": {"level":"unknown","used_ratio":null,"used_cents":null,"limit_cents":1000000,"remaining_cents":null}},
+    {"id": "M5", "used_cents": 100, "available_cents": 0, "expect": {"level":"unknown","used_ratio":null,"used_cents":100,"limit_cents":0,"remaining_cents":null}},
+    {"id": "M6", "used_cents": 100, "available_cents": 1000000, "expect": {"level":"ok","used_ratio":0.0001,"used_cents":100,"limit_cents":1000000,"remaining_cents":999900}}
+  ],
+  "drawdown": [
+    {"id": "D1", "balance_cents": 4900000, "peak_cents": 5050000, "calc": "dd 150000/200000=0.75", "expect": {"level":"ok","used_ratio":0.75,"used_cents":150000,"limit_cents":200000,"remaining_cents":50000}},
+    {"id": "D2", "balance_cents": 4850000, "peak_cents": 5050000, "calc": "dd 200000 -> breach", "expect": {"level":"breach","used_ratio":1,"used_cents":200000,"limit_cents":200000,"remaining_cents":0}},
+    {"id": "D3", "balance_cents": 5100000, "peak_cents": 5050000, "calc": "above peak -> 0", "expect": {"level":"ok","used_ratio":0,"used_cents":0,"limit_cents":200000,"remaining_cents":200000}},
+    {"id": "D4", "balance_cents": 4900000, "peak_cents": null, "expect": {"level":"unknown","used_ratio":null,"used_cents":null,"limit_cents":200000,"remaining_cents":null}},
+    {"id": "D5", "balance_cents": 4890000, "peak_cents": 5050000, "calc": "dd 160000 = 0.8 -> warn", "expect": {"level":"warn","used_ratio":0.8,"used_cents":160000,"limit_cents":200000,"remaining_cents":40000}}
+  ],
+  "tolerance": "used_ratio compared with |a-b| < 1e-9; all *_cents exact"
+}

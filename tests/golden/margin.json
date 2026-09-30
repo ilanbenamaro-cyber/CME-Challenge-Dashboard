@@ -1,0 +1,13 @@
+{
+  "cme": [{"root":"ES","initial_usd":13200,"maintenance_usd":12000,"as_of":"2026-09-29"}],
+  "sheet": [{"root":"ES","initial_usd":15000,"maintenance_usd":null,"as_of":"2026-09-28"},{"root":"MES","initial_usd":1320,"maintenance_usd":1200,"as_of":"2026-09-28"}],
+  "cases": [
+    {"id":"R1","root":"ES","basis":"maintenance","cmeFresh":true,"expect":{"value_usd":12000,"source":"cme"}},
+    {"id":"R2","root":"ES","basis":"initial","cmeFresh":false,"expect":{"value_usd":15000,"source":"sheet"}},
+    {"id":"R3","root":"ES","basis":"maintenance","cmeFresh":false,"expect":{"value_usd":null,"source":null}},
+    {"id":"R4","root":"MES","basis":"maintenance","cmeFresh":true,"expect":{"value_usd":1200,"source":"sheet"}},
+    {"id":"R5","root":"ES","basis":null,"cmeFresh":true,"expect":{"value_usd":null,"source":null}},
+    {"id":"R6","root":"MNQ","basis":"initial","cmeFresh":true,"expect":{"value_usd":null,"source":null}},
+    {"id":"R7","root":"ES","basis":"initial","cmeFresh":true,"cme_override":null,"sheet_override":null,"expect":{"value_usd":null,"source":null}}
+  ]
+}

@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sheet.schema.json",
+  "title": "Apps Script endpoint response (D6)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at",
+    "tabs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "tabs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Trades",
+        "Daily"
+      ],
+      "properties": {
+        "Trades": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "root",
+              "side",
+              "qty",
+              "entry",
+              "exit",
+              "entry_time",
+              "exit_time",
+              "fees_usd"
+            ],
+            "properties": {
+              "id": {
+                "type": [
+                  "string",
+                  "number"
+                ]
+              },
+              "root": {
+                "type": "string"
+              },
+              "side": {
+                "type": "string"
+              },
+              "qty": {
+                "type": [
+                  "number",
+                  "string"
+                ]
+              },
+              "entry": {
+                "type": [
+                  "number",
+                  "string"
+                ]
+              },
+              "exit": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              },
+              "entry_time": {
+                "type": "string"
+              },
+              "exit_time": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fees_usd": {
+                "type": [
+                  "number",
+                  "string"
+                ]
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "Daily": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "date",
+              "reported_pnl_usd",
+              "reported_balance_usd"
+            ],
+            "properties": {
+              "date": {
+                "type": "string"
+              },
+              "reported_pnl_usd": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              },
+              "reported_balance_usd": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "Margins": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "root",
+              "initial_usd",
+              "maintenance_usd",
+              "as_of"
+            ],
+            "properties": {
+              "root": {
+                "type": "string"
+              },
+              "initial_usd": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              },
+              "maintenance_usd": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              },
+              "as_of": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$comment": "Raw cells: blank cells arrive as '' and must be normalised to null by docs/js/io/sheet.mjs; strings are coerced to numbers there, and a non-coercible value is a row error (never 0). Error response: {error: string} with no tabs."
+}

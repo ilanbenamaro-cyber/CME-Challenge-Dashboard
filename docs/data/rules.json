@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-09-30",
+  "source_doc": "plan/RULES.md",
+  "rules": {
+    "starting_balance_usd":    {"value": null, "source": null, "note": "Fill from plan/RULES.md"},
+    "daily_loss_cap_usd":      {"value": null, "source": null, "note": "Fill from plan/RULES.md"},
+    "max_drawdown_usd":        {"value": null, "source": null, "note": "Fill from plan/RULES.md"},
+    "max_contracts":           {"value": null, "source": null, "note": "Standard-contract equivalent"},
+    "micro_to_standard_ratio": {"value": null, "source": null, "note": "e.g. 10 if 10 micros count as 1 standard"},
+    "flatten_time_ct":         {"value": null, "source": null, "note": "HH:MM America/Chicago"},
+    "hold_margin_multipliers": {"value": null, "source": null, "note": "{intraday, overnight, weekend}"},
+    "margin_basis":            {"value": null, "source": null, "note": "initial | maintenance"},
+    "allowed_roots":           {"value": null, "source": null},
+    "challenge_start_date":    {"value": null, "source": null},
+    "challenge_end_date":      {"value": null, "source": null}
+  }
+}

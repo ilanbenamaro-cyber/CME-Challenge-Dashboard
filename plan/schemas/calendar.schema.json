@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "calendar.schema.json",
+  "title": "calendar envelope (D7)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "dataset",
+    "generated_at",
+    "data_as_of",
+    "source",
+    "status",
+    "errors",
+    "data"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "dataset": {
+      "const": "calendar"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "data_as_of": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "partial",
+        "error"
+      ]
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "data": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "events",
+            "expirations"
+          ],
+          "properties": {
+            "events": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "date",
+                  "time_ct",
+                  "title",
+                  "impact",
+                  "source"
+                ],
+                "properties": {
+                  "date": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "time_ct": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^\\d{2}:\\d{2}$"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "impact": {
+                    "enum": [
+                      "high",
+                      "medium",
+                      "low"
+                    ]
+                  },
+                  "source": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "expirations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "root",
+                  "contract_code",
+                  "date",
+                  "source"
+                ],
+                "properties": {
+                  "root": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9]{1,4}$"
+                  },
+                  "contract_code": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "source": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

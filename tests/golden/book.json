@@ -1,0 +1,55 @@
+{
+  "tradeDate": [
+    {"t": "2026-09-29T21:59:00Z", "calc": "16:59 CDT Tue", "expect": "2026-09-29"},
+    {"t": "2026-09-29T22:00:00Z", "calc": "17:00 CDT Tue -> Wed", "expect": "2026-09-30"},
+    {"t": "2026-09-25T22:00:00Z", "calc": "Fri 17:00 CDT -> Mon", "expect": "2026-09-28"},
+    {"t": "2026-09-26T15:00:00Z", "calc": "Sat -> Mon", "expect": "2026-09-28"},
+    {"t": "2026-09-27T15:00:00Z", "calc": "Sun 10:00 -> Mon", "expect": "2026-09-28"},
+    {"t": "2026-09-27T23:00:00Z", "calc": "Sun 18:00 -> Mon", "expect": "2026-09-28"},
+    {"t": "2026-12-01T23:00:00Z", "calc": "17:00 CST Tue -> Wed", "expect": "2026-12-02"},
+    {"t": "2026-12-01T22:59:00Z", "calc": "16:59 CST", "expect": "2026-12-01"},
+    {"t": "2026-09-30T04:30:00Z", "calc": "23:30 CDT Tue 09-29 -> Wed", "expect": "2026-09-30"}
+  ],
+  "trades": [
+    {"id":"T1","root":"ES","side":"long","qty":1,"entry":4500.00,"exit":4502.00,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":"2026-09-29T15:00:00-05:00","fees_usd":4.50},
+    {"id":"T2","root":"MES","side":"short","qty":2,"entry":5800.00,"exit":5790.00,"entry_time":"2026-09-29T17:05:00-05:00","exit_time":"2026-09-29T17:30:00-05:00","fees_usd":2.48},
+    {"id":"T3","root":"CL","side":"long","qty":1,"entry":70.00,"exit":69.90,"entry_time":"2026-09-29T09:00:00-05:00","exit_time":"2026-09-29T20:00:00Z","fees_usd":4.80},
+    {"id":"T4","root":"ES","side":"long","qty":1,"entry":4510.00,"exit":null,"entry_time":"2026-09-30T09:00:00-05:00","exit_time":null,"fees_usd":0},
+    {"id":"T5","root":"ES","side":"long","qty":1,"entry":4500.00,"exit":4500.25,"entry_time":"2026-09-25T17:30:00-05:00","exit_time":"2026-09-25T18:00:00-05:00","fees_usd":0},
+    {"id":"T6","root":"XX","side":"long","qty":1,"entry":1,"exit":2,"entry_time":"2026-09-24T09:00:00-05:00","exit_time":"2026-09-24T10:00:00-05:00","fees_usd":0},
+    {"id":"T7","root":"MES","side":"long","qty":1,"entry":5800.00,"exit":5801.00,"entry_time":"2026-09-27T17:10:00-05:00","exit_time":"2026-09-27T18:00:00-05:00","fees_usd":0}
+  ],
+  "calc": {
+    "T1": "8 ticks*1250=10000-450=9550 on 09-29",
+    "T2": "17:30 CT -> 09-30; short 40 ticks*125*2=10000-248=9752",
+    "T3": "20:00Z=15:00 CDT -> 09-29; -10 ticks*1000=-10000-480=-10480",
+    "T4": "open -> ignored",
+    "T5": "Fri 18:00 -> Mon 09-28; 1 tick*1250=1250",
+    "T6": "unknown root -> 09-24 null with error",
+    "T7": "Sun 18:00 -> Mon 09-28; 4 ticks*125=500"
+  },
+  "expect_computed": {
+    "2026-09-30": {"net_cents": 9752, "error_count": 0},
+    "2026-09-29": {"net_cents": -930, "error_count": 0},
+    "2026-09-28": {"net_cents": 1750, "error_count": 0},
+    "2026-09-24": {"net_cents": null, "error_count": 1}
+  },
+  "reported": [
+    {"date": "2026-09-30", "reported_pnl_usd": 97.52, "reported_balance_usd": 50000},
+    {"date": "2026-09-29", "reported_pnl_usd": -9.31, "reported_balance_usd": 49902.48},
+    {"date": "2026-09-28", "reported_pnl_usd": 18.00, "reported_balance_usd": 49911.79},
+    {"date": "2026-09-25", "reported_pnl_usd": 10.00, "reported_balance_usd": 49893.79},
+    {"date": "2026-09-24", "reported_pnl_usd": 5.00, "reported_balance_usd": 49883.79},
+    {"date": "2026-09-23", "reported_pnl_usd": null, "reported_balance_usd": null}
+  ],
+  "reconcile_limit": 10,
+  "expect_recon": [
+    {"date": "2026-09-30", "computed_cents": 9752,  "reported_cents": 9752,  "diff_cents": 0,     "level": "ok"},
+    {"date": "2026-09-29", "computed_cents": -930,  "reported_cents": -931,  "diff_cents": 1,     "level": "ok"},
+    {"date": "2026-09-28", "computed_cents": 1750,  "reported_cents": 1800,  "diff_cents": -50,   "level": "warn"},
+    {"date": "2026-09-25", "computed_cents": 0,     "reported_cents": 1000,  "diff_cents": -1000, "level": "warn"},
+    {"date": "2026-09-24", "computed_cents": null,  "reported_cents": 500,   "diff_cents": null,  "level": "unknown"},
+    {"date": "2026-09-23", "computed_cents": 0,     "reported_cents": null,  "diff_cents": null,  "level": "unknown"}
+  ],
+  "rules": "A date with no closed trades has computed_cents 0 (a fact of the log). reported null -> unknown. computed null -> unknown. |diff| <= 1 -> ok."
+}

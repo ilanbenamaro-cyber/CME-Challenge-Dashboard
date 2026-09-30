@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "contracts"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "contracts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "root",
+          "name",
+          "tick_size",
+          "tick_value_usd",
+          "parent",
+          "expiry_rule",
+          "months",
+          "source"
+        ],
+        "properties": {
+          "root": {
+            "type": "string",
+            "pattern": "^[A-Z0-9]{1,4}$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tick_size": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "tick_value_usd": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expiry_rule": {
+            "enum": [
+              "quarterly_third_friday",
+              "manual"
+            ]
+          },
+          "months": {
+            "type": "string",
+            "pattern": "^[FGHJKMNQUVXZ]+$"
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

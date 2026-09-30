@@ -1,0 +1,16 @@
+{
+  "name": "cme-challenge-dashboard",
+  "private": true,
+  "type": "module",
+  "description": "Research and risk dashboard for a CME futures challenge. Never places orders.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test:js": "node --test \"tests/js/**/*.test.mjs\" \"tests/boundary/**/*.test.mjs\"",
+    "test:py": "python3 -m pytest -q tests/py tests/boundary",
+    "test:e2e": "node tests/e2e/smoke.mjs",
+    "test": "npm run typecheck && npm run test:js && npm run test:py"
+  },
+  "devDependencies": {
+    "typescript": "6.0.2"
+  }
+}

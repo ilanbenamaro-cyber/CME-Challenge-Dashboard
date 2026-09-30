@@ -1,0 +1,10 @@
+{
+  "barsRootFor": [["MES","ES"],["ES","ES"],["MGC","GC"],["XX",null]],
+  "standardEquivalent": [
+    {"positions":[{"root":"ES","qty":2},{"root":"MES","qty":5}],"ratio":10,"expect":2.5},
+    {"positions":[{"root":"ES","qty":2},{"root":"MES","qty":5}],"ratio":null,"expect":null},
+    {"positions":[{"root":"ES","qty":2}],"ratio":null,"expect":2},
+    {"positions":[{"root":"XX","qty":1}],"ratio":10,"expect":null},
+    {"positions":[],"ratio":null,"expect":0}
+  ]
+}

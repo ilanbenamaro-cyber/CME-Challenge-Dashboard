@@ -1,0 +1,347 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "rules.schema.json",
+  "title": "rules.json (D10)",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "updated_at",
+    "source_doc",
+    "rules"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "updated_at": {
+      "type": "string"
+    },
+    "source_doc": {
+      "type": "string"
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "starting_balance_usd",
+        "daily_loss_cap_usd",
+        "max_drawdown_usd",
+        "max_contracts",
+        "micro_to_standard_ratio",
+        "flatten_time_ct",
+        "hold_margin_multipliers",
+        "margin_basis",
+        "allowed_roots",
+        "challenge_start_date",
+        "challenge_end_date"
+      ],
+      "properties": {
+        "starting_balance_usd": {
+          "type": "object",
+          "required": [
+            "value",
+            "source"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "exclusiveMinimum": 0
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        },
+        "daily_loss_cap_usd": {
+          "type": "object",
+          "required": [
+            "value",
+            "source"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "exclusiveMinimum": 0
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        },
+        "max_drawdown_usd": {
+          "type": "object",
+          "required": [
+            "value",
+            "source"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "exclusiveMinimum": 0
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        },
+        "max_contracts": {
+          "type": "object",
+          "required": [
+            "value",
+            "source"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        },
+        "micro_to_standard_ratio": {
+          "type": "object",
+          "required": [
+            "value",
+            "source"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "exclusiveMinimum": 0
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        },
+        "flatten_time_ct": {
+          "type": "object",
+          "required": [
+            "value",
+            "source"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        },
+        "hold_margin_multipliers": {
+          "type": "object",
+          "required": [
+            "value",
+            "source"
+          ],
+          "properties": {
+            "value": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "intraday",
+                    "overnight",
+                    "weekend"
+                  ],
+                  "properties": {
+                    "intraday": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "overnight": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "weekend": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        },
+        "margin_basis": {
+          "type": "object",
+          "required": [
+            "value",
+            "source"
+          ],
+          "properties": {
+            "value": {
+              "enum": [
+                "initial",
+                "maintenance",
+                null
+              ]
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        },
+        "allowed_roots": {
+          "type": "object",
+          "required": [
+            "value",
+            "source"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Z0-9]{1,4}$"
+              }
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        },
+        "challenge_start_date": {
+          "type": "object",
+          "required": [
+            "value",
+            "source"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        },
+        "challenge_end_date": {
+          "type": "object",
+          "required": [
+            "value",
+            "source"
+          ],
+          "properties": {
+            "value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}
