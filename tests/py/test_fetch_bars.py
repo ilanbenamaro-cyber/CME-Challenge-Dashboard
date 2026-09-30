@@ -199,6 +199,39 @@ def test_dry_run_uses_fake_client_and_no_key(now, tmp_path):
     validate("bars", e)
 
 
+def test_real_dbnstore_to_df_maps_continuous_symbol():
+    """Offline round trip through databento's real DBNStore.to_df(): with stype_in=continuous and
+    stype_out=instrument_id, the symbol column carries the requested 'ES.c.0' and the index is ts_event."""
+    import io
+    from datetime import date
+    from types import SimpleNamespace
+
+    import databento as db
+    import databento_dbn as dbn
+
+    hour = 3600 * 10**9
+    t0 = int(datetime(2026, 9, 29, 13, tzinfo=timezone.utc).timestamp()) * 10**9
+    meta = dbn.Metadata(
+        dataset="GLBX.MDP3", schema=dbn.Schema.OHLCV_1H, start=t0, end=t0 + 3 * hour,
+        stype_in=dbn.SType.CONTINUOUS, stype_out=dbn.SType.INSTRUMENT_ID, symbols=["ES.c.0"],
+        partial=[], not_found=[],
+        mappings=[SimpleNamespace(raw_symbol="ES.c.0", intervals=[SimpleNamespace(
+            start_date=date(2026, 9, 1), end_date=date(2026, 12, 31), symbol="4242")])],
+    )
+    buf = io.BytesIO()
+    buf.write(meta.encode())
+    for i in range(3):
+        px = (5000 + i) * 10**9
+        buf.write(bytes(dbn.OHLCVMsg(0x22, 1, 4242, t0 + i * hour, px, px + 10**9, px - 10**9, px, 10 + i)))
+    df = db.DBNStore.from_bytes(buf.getvalue()).to_df()
+    assert df.index.name == "ts_event"
+    assert set(df["symbol"]) == {"ES.c.0"}
+    bars, dropped = fetch_bars.frame_to_bars(df, "ES.c.0")
+    assert dropped == 0
+    assert bars[0] == {"t": "2026-09-29T13:00:00Z", "o": 5000.0, "h": 5001.0, "l": 4999.0, "c": 5000.0, "v": 10.0}
+    assert [b["t"] for b in bars] == ["2026-09-29T13:00:00Z", "2026-09-29T14:00:00Z", "2026-09-29T15:00:00Z"]
+
+
 def test_contract_list_drives_roots():
     contracts = load_contracts()
     parents = [c["root"] for c in contracts if c["parent"] is None]
