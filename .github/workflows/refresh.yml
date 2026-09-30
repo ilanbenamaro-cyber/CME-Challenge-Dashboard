@@ -1,0 +1,64 @@
+name: refresh
+# Hourly data refresh (research data only). Writes docs/data/{bars,settlements,margins,challenge}.json.
+# GitHub cron is best-effort: 5-30 min delays and skipped runs are normal; the site marks data STALE.
+# After editing this file, trigger it with `gh workflow run refresh.yml` (re-run replays the old commit).
+on:
+  schedule:
+    - cron: '7 * * * 0-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 20
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run refresh jobs
+        env:
+          DATABENTO_API_KEY: ${{ secrets.DATABENTO_API_KEY }}
+        run: python -m jobs.refresh
+
+      - name: Commit changed data files
+        # Only the default branch receives bot data commits; dispatches on other branches are a smoke test.
+        if: github.ref == 'refs/heads/main'
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          FILES="docs/data/bars.json docs/data/settlements.json docs/data/margins.json docs/data/challenge.json"
+          if [ -z "$(git status --porcelain -- $FILES)" ]; then
+            echo "No data changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- $FILES
+          git commit -m "data: refresh $(date -u +%Y-%m-%dT%H:%M:%SZ)" -- $FILES
+          for attempt in 1 2; do
+            if git pull --rebase origin "$BRANCH" && git push origin "HEAD:$BRANCH"; then
+              exit 0
+            fi
+            git rebase --abort 2>/dev/null || true
+            echo "Push attempt $attempt failed; retrying."
+            sleep 5
+          done
+          echo "Push failed after retry."
+          exit 1
