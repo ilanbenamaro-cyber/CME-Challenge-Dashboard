@@ -187,7 +187,7 @@ button, input, select { font: inherit; color: inherit; }
 .banner-title { margin: 0; font-size: 14px; }
 .banner-lvl { font-size: 10px; font-weight: 800; letter-spacing: 0.08em; margin-left: 4px; }
 .banner-msg { margin: 2px 0 0; overflow-wrap: anywhere; }
-.banner-details { margin: 4px 0 0; padding-left: 16px; font-size: 12px; font-family: var(--mono); overflow-wrap: anywhere; }
+.banner-details { margin: 4px 0 0; padding-left: 16px; font-size: 12px; font-family: var(--mono); overflow-wrap: break-word; }
 .banner-breach { background: var(--breach-bg); border-color: var(--breach-line); color: var(--ink); }
 .banner-breach .banner-ico, .banner-breach .banner-lvl, .banner-breach strong { color: var(--breach); }
 .banner-breach .banner-title { font-size: 15px; }
@@ -200,7 +200,8 @@ button, input, select { font: inherit; color: inherit; }
 .unknownlist { list-style: none; margin: 0; padding: 8px 10px; border: 1px dashed var(--unk); border-radius: var(--radius); background: var(--unk-bg); font-size: 12px; }
 .unknownlist li { margin: 3px 0; overflow-wrap: anywhere; }
 .unknownlist .lvl { margin-right: 4px; }
-.banner-details { columns: 2; column-gap: 16px; }
+/* One column on phones so snake_case rule names never break mid-word; two where they fit. */
+@media (min-width: 600px) { .banner-details { columns: 2; column-gap: 16px; } }
 .infoline { list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--muted); }
 .infoline li { margin: 2px 0; overflow-wrap: anywhere; }
 
