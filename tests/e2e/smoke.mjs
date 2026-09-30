@@ -154,9 +154,8 @@ async function scenario(browser, sc) {
   page.on('pageerror', (/** @type {Error} */ e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (/** @type {any} */ m) => {
     const text = m.text();
-    // Expected, not errors: a 404 for a not-yet-produced data file (committed scenario), and Chromium's notice
-    // that the spec-pinned `frame-ancestors` is ignored in a <meta> CSP (see ADR request in the outbox).
-    const expected = /Failed to load resource.*404/.test(text) || /'frame-ancestors' is ignored when delivered via a <meta> element/.test(text);
+    // Expected, not an error: a 404 for a not-yet-produced data file (committed scenario).
+    const expected = /Failed to load resource.*404/.test(text);
     if (m.type() === 'error' && !expected) errors.push(`console: ${text}`);
   });
   page.on('dialog', async (/** @type {any} */ d) => { dialogs++; await d.dismiss(); });
