@@ -11,11 +11,11 @@
 export function atr(bars, period) {
   if (!Number.isInteger(period) || period < 1) return null;
   if (!Array.isArray(bars) || bars.length < period + 1) return null;
-  const window = bars.slice(bars.length - (period + 1));
+  const span = bars.slice(bars.length - (period + 1));
   let sum = 0;
-  for (let i = 1; i < window.length; i += 1) {
-    const cur = window[i];
-    const prev = window[i - 1];
+  for (let i = 1; i < span.length; i += 1) {
+    const cur = span[i];
+    const prev = span[i - 1];
     if (!cur || !prev) return null;
     const { h, l } = cur;
     const pc = prev.c;
