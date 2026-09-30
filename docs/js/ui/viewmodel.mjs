@@ -12,6 +12,7 @@ import { classifyFreshness, POLICIES } from '../core/freshness.mjs';
 import { resolveMargin } from '../core/margin.mjs';
 import { tradePnlCents, usdToCents } from '../core/money.mjs';
 import { ruleValue } from '../core/rules.mjs';
+import { DAILY_ROW_PREFIX, TRADES_ROW_PREFIX } from '../io/sheet.mjs';
 import { sizePosition } from '../core/sizer.mjs';
 import { ctDate, ctParts, daysBetween, tradeDate, weekdayOf } from '../core/time.mjs';
 
@@ -536,7 +537,7 @@ function buildCtx(inp) {
   const sheetData = inp.sheet?.data ?? null;
   const trades = sheetData ? sheetData.trades : null;
   const rowErrors = inp.sheet?.rowErrors ?? [];
-  const tradeRowErrors = rowErrors.filter((e) => e.startsWith('Trades row '));
+  const tradeRowErrors = rowErrors.filter((e) => e.startsWith(TRADES_ROW_PREFIX));
   const basisRule = ruleValue(rs, 'margin_basis');
   // Any rejected Trades row could be an open position, so the open set is only known when every row is valid.
   const n = tradeRowErrors.length;
@@ -709,14 +710,20 @@ function computeMoney(ctx) {
   else if (open === null) equityReason = `open P&L UNKNOWN: ${openReason}`;
   else equity = start + closedTotal + open;
 
+  // Peak is only known when every Daily row was accepted and carries a balance: a missing row could hold the max.
   let peak = /** @type {number|null} */ (null);
   let peakReason = '';
+  const daily = ctx.sheet?.data?.daily ?? null;
+  const dailyBad = (ctx.sheet?.rowErrors ?? []).filter((e) => e.startsWith(DAILY_ROW_PREFIX)).length;
+  const noBalance = (daily ?? []).filter((d) => !isNum(d.reported_balance_usd)).map((d) => d.date);
   if (start === null) peakReason = 'starting_balance_usd rule UNKNOWN';
-  else {
+  else if (daily === null) peakReason = `peak UNKNOWN: ${sheetWhy}`;
+  else if (dailyBad > 0) peakReason = `peak UNKNOWN: ${dailyBad} invalid Daily row${dailyBad === 1 ? '' : 's'} in the Sheet`;
+  else if (noBalance.length > 0) {
+    peakReason = `peak UNKNOWN: Daily ${noBalance.slice(0, 3).join(', ')}${noBalance.length > 3 ? ' …' : ''} has no reported balance`;
+  } else {
     peak = start;
-    for (const d of ctx.sheet?.data?.daily ?? []) {
-      if (isNum(d.reported_balance_usd)) peak = Math.max(peak, usdToCents(d.reported_balance_usd));
-    }
+    for (const d of daily) peak = Math.max(peak, usdToCents(/** @type {number} */ (d.reported_balance_usd)));
     peakReason = 'max(starting balance, Sheet Daily EOD balances)';
   }
 
@@ -797,8 +804,12 @@ function buildAccount(ctx, money) {
     if (loss.level === 'unknown' && money.open === null) loss = { ...loss, reason: `open P&L UNKNOWN (${money.openReason})` };
   }
   let dd = drawdownMeter(money.equity, money.peak, ctx.rs);
-  if (dd.level === 'unknown' && money.equity === null && ruleValue(ctx.rs, 'max_drawdown_usd').known) {
-    dd = { ...dd, reason: `equity UNKNOWN (${money.equityReason})` };
+  if (dd.level === 'unknown' && ruleValue(ctx.rs, 'max_drawdown_usd').known) {
+    /** @type {string[]} */
+    const why = [];
+    if (money.peak === null) why.push(money.peakReason);
+    if (money.equity === null) why.push(`equity UNKNOWN (${money.equityReason})`);
+    if (why.length > 0) dd = { ...dd, reason: why.join('; ') };
   }
   let mm = marginMeter(money.marginUsed, money.equity);
   if (mm.level === 'unknown') {
@@ -1253,11 +1264,13 @@ function buildBanners(inp, ctx, account, positions) {
   const rowErrors = inp.sheet?.rowErrors ?? [];
   if (rowErrors.length > 0) {
     const tradeBad = ctx.tradeRowErrors.length > 0;
+    const dailyBad = rowErrors.some((e) => e.startsWith(DAILY_ROW_PREFIX));
+    const affected = [tradeBad ? "today's P&L and open positions" : '', dailyBad ? 'the drawdown peak' : ''].filter(Boolean);
     out.push({
       level: 'warn',
       kind: 'sheet',
       title: `Sheet: ${rowErrors.length} invalid row${rowErrors.length === 1 ? '' : 's'}`,
-      message: tradeBad ? "Fix these rows — today's P&L and open positions are UNKNOWN until then" : 'Fix these rows in the Sheet',
+      message: affected.length > 0 ? `Fix these rows — ${affected.join(' and ')} ${affected.length > 1 || tradeBad ? 'are' : 'is'} UNKNOWN until then` : 'Fix these rows in the Sheet',
       details: rowErrors.slice(0, 8).concat(rowErrors.length > 8 ? [`…and ${rowErrors.length - 8} more`] : []),
     });
   }

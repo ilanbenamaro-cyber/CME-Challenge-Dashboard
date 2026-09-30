@@ -14,6 +14,8 @@
 
 /** Prefix of every Trades row error (the view model uses it to invalidate today's P&L). */
 export const TRADES_ROW_PREFIX = 'Trades row ';
+/** Prefix of every Daily row error (the view model uses it to make the drawdown peak UNKNOWN). */
+export const DAILY_ROW_PREFIX = 'Daily row ';
 
 const URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 const FETCH_TIMEOUT_MS = 20000;
@@ -220,16 +222,16 @@ export function normalizeSheet(raw) {
   tabs.Daily.forEach((row, i) => {
     const label = `#${i + 2}`;
     if (!isObj(row) || isBlankRow(row)) {
-      if (!isObj(row)) rowErrors.push(`Daily row ${label}: not an object`);
+      if (!isObj(row)) rowErrors.push(`${DAILY_ROW_PREFIX}${label}: not an object`);
       return;
     }
     const date = cellText(row.date);
     const pnl = coerceNumber(row.reported_pnl_usd);
     const bal = coerceNumber(row.reported_balance_usd);
     if (date === null || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      rowErrors.push(`Daily row ${label}: date must be YYYY-MM-DD`);
+      rowErrors.push(`${DAILY_ROW_PREFIX}${label}: date must be YYYY-MM-DD`);
     } else if (Number.isNaN(pnl) || Number.isNaN(bal)) {
-      rowErrors.push(`Daily row ${date}: reported value is not a number`);
+      rowErrors.push(`${DAILY_ROW_PREFIX}${date}: reported value is not a number`);
     } else {
       daily.push({ date, reported_pnl_usd: pnl, reported_balance_usd: bal });
     }

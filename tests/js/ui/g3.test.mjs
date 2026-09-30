@@ -49,3 +49,56 @@ test('P0-1: Sheet not loaded keeps open positions UNKNOWN', () => {
   assert.equal(vm.positions.known, false);
   assert.equal(vm.banners.find((b) => b.kind === 'flatten')?.level, 'unknown');
 });
+
+/**
+ * Sheet whose Daily tab is replaced.
+ * @param {unknown[]} daily
+ */
+function sheetWithDaily(daily) {
+  const raw = sheetRaw();
+  raw.tabs.Daily = /** @type {any} */ (daily);
+  return sheetResult(raw);
+}
+
+test('P0-2: a rejected Daily row makes peak and the drawdown meter UNKNOWN', () => {
+  // Input A: true peak 51,800 (row rejected), so DD would be 1,800 of 2,000; it must not read "ok 5%".
+  const vm = buildViewModel(inputs({ sheet: sheetWithDaily([
+    { date: '2026-09-28', reported_pnl_usd: 1800, reported_balance_usd: '51,800.00 USD' },
+    { date: '2026-09-29', reported_pnl_usd: -1700, reported_balance_usd: 50100 },
+  ]) }));
+  noSectionErrors(vm);
+  assert.ok(vm.account);
+  assert.equal(vm.account.peak.known, false);
+  assert.equal(vm.account.peak.text, 'UNKNOWN');
+  assert.match(vm.account.peak.note, /1 invalid Daily row/);
+  const dd = vm.account.meters.find((m) => m.key === 'drawdown');
+  assert.equal(dd?.level, 'unknown');
+  assert.equal(dd?.pct_text, 'UNKNOWN');
+  assert.match(dd?.note ?? '', /peak UNKNOWN/);
+});
+
+test('P0-2: a Daily row with a blank balance makes peak UNKNOWN', () => {
+  // Input B: balance not filled in yet.
+  const vm = buildViewModel(inputs({ sheet: sheetWithDaily([{ date: '2026-09-28', reported_pnl_usd: 1800, reported_balance_usd: '' }]) }));
+  noSectionErrors(vm);
+  assert.ok(vm.account);
+  assert.equal(vm.account.peak.text, 'UNKNOWN');
+  assert.match(vm.account.peak.note, /2026-09-28 has no reported balance/);
+  assert.equal(vm.account.meters.find((m) => m.key === 'drawdown')?.level, 'unknown');
+});
+
+test('P0-2: Sheet not loaded makes peak UNKNOWN, not the starting balance', () => {
+  // Input C.
+  const vm = buildViewModel(inputs({ sheet: null }));
+  noSectionErrors(vm);
+  assert.ok(vm.account);
+  assert.equal(vm.account.peak.known, false);
+  assert.equal(vm.account.peak.text, 'UNKNOWN');
+  assert.ok(!renderApp(vm).includes('$50,000.00'), 'starting balance shown as a known peak');
+});
+
+test('P0-2: complete Daily data still gives a known peak', () => {
+  const vm = buildViewModel(inputs());
+  assert.equal(vm.account?.peak.text, '$50,100.00');
+  assert.equal(vm.account?.peak.known, true);
+});
