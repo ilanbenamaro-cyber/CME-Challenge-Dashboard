@@ -599,6 +599,9 @@ function buildCtx(inp) {
   };
 }
 
+/** Label for any mark or last price taken from bars (P1-5: may differ from a held back month during the roll). */
+export const CONT_LABEL = 'front-month continuous (.c.0)';
+
 /** Duration of one bar in the bars envelope (1h bars; `t` is the bar's open time). */
 const BAR_MS = 60 * 60 * 1000;
 
@@ -668,7 +671,7 @@ function markCell(ctx, m) {
     known: true,
     badge: staleBadge(m.fr),
     level: m.usable ? null : 'warn',
-    note: last ? `last 1h close, bar ${last.t.slice(0, 16).replace('T', ' ')}Z` : '',
+    note: last ? `last 1h close, bar ${last.t.slice(0, 16).replace('T', ' ')}Z · ${m.symbol ? `${m.symbol} ` : ''}${CONT_LABEL}` : CONT_LABEL,
   });
 }
 
@@ -853,7 +856,7 @@ function buildAccount(ctx, money) {
   const acctBadge = accountBadge(ctx);
   const realized = usdCell(money.realized, money.realized === null ? money.realizedReason : `closed trades, trade date ${ctx.td}`);
   realized.badge = sheetBadge;
-  const open = usdCell(money.open, money.open === null ? money.openReason : ctx.open && ctx.open.length > 0 ? 'marked at last 1h close' : 'flat');
+  const open = usdCell(money.open, money.open === null ? money.openReason : ctx.open && ctx.open.length > 0 ? `marked at last 1h close, ${CONT_LABEL}` : 'flat');
   if (money.open !== null && ctx.open && ctx.open.length > 0) open.badge = acctBadge;
   const equity = usdCell(money.equity, money.equity === null ? money.equityReason : 'start + closed + open');
   equity.sign = null;
@@ -896,7 +899,7 @@ function buildAccount(ctx, money) {
     margin_used: marginUsed,
     trade_date: ctx.td,
     meters: [
-      meterVM(loss, 'daily_loss', 'Daily loss vs cap', 'loss = −(realized + open)', acctBadge),
+      meterVM(loss, 'daily_loss', 'Daily loss vs cap', 'assumes loss = −(realized today + open P&L since entry); confirm against RULES.md', acctBadge),
       meterVM(dd, 'drawdown', 'Drawdown vs max', 'assumes EOD trailing: peak = max(start, EOD balances)', acctBadge),
       meterVM(mm, 'margin', 'Margin in use vs equity', `${ctx.form.hold} hold multiplier`, acctBadge),
     ],

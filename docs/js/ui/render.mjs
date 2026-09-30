@@ -2,6 +2,7 @@
 // Sheet ids and notes are untrusted. No inline styles or handlers (CSP style-src/script-src 'self').
 
 import { escapeHtml, html, Raw } from './html.mjs';
+import { CONT_LABEL } from './viewmodel.mjs';
 
 /** @typedef {import('./viewmodel.mjs').ViewModel} ViewModel */
 /** @typedef {import('./viewmodel.mjs').Cell} Cell */
@@ -188,7 +189,8 @@ export function renderPositions(vm) {
     <td class="mono">${r.id}</td><td>${r.root}</td><td class="side-${r.side}">${r.side.toUpperCase()}</td><td class="num">${r.qty}</td>
     <td class="num">${r.entry_text}</td><td class="num">${renderCell(r.mark, { noNote: true })}</td><td class="num">${renderCell(r.pnl)}</td>
     </tr>${r.notes || r.flags.length ? html`<tr class="subrow"><td colspan="7" class="notes">${r.notes ? html`<span class="note-inline">Notes: ${r.notes}</span>` : ''}${r.flags.length ? html` ${levelPill('breach')} ${r.flags.join('; ')}` : ''}</td></tr>` : ''}`)}</tbody>
-</table></div>`;
+</table></div>
+<p class="note">Mark = last 1h close of the ${CONT_LABEL} series; during the roll it may not be the contract month you hold.</p>`;
   return html`<section class="panel" id="p-positions" data-live="positions">
   <h2>Positions${p.badge ? html` <span class="badge">${p.badge}</span>` : ''}</h2>
   <div class="pos-summary"><span class="kpi-label">Standard-equivalent open / max</span> ${
@@ -277,7 +279,7 @@ export function renderMarkets(vm) {
   /** @param {string} label @param {Cell} c */
   const item = (label, c) => html`<div class="mk"><dt>${label}</dt><dd>${renderCell(c)}</dd></div>`;
   return html`<section class="panel" id="p-markets" data-live="markets">
-  <h2>Markets <span class="h-sub">watched roots</span></h2>
+  <h2>Markets <span class="h-sub">watched roots · last = ${CONT_LABEL}</span></h2>
   ${rows.length === 0 ? html`<p class="empty">No watched roots (Settings)</p>` : ''}
   <div class="cards">${rows.map((r) => html`<article class="card">
     <h3><span class="root">${r.root}</span> <span class="h-sub">${r.name}</span></h3>

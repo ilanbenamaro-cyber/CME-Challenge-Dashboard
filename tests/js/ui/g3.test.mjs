@@ -189,6 +189,27 @@ test('P1-4: a root with no bars is UNKNOWN', () => {
   assert.equal(vm.account?.open.text, 'UNKNOWN');
 });
 
+test('P1-5: marks and last prices from bars are labelled front-month continuous (.c.0)', () => {
+  const vm = buildViewModel(inputs());
+  noSectionErrors(vm);
+  const label = /front-month continuous \(\.c\.0\)/;
+  const es = vm.markets?.find((m) => m.root === 'ES');
+  assert.match(es?.last.note ?? '', label);
+  assert.match(vm.positions?.rows[0]?.mark.note ?? '', label);
+  assert.match(vm.account?.open.note ?? '', label);
+  const html = renderApp(vm);
+  assert.match(region(html, 'data-live="positions"'), label);
+  assert.match(region(html, 'data-live="markets"'), label);
+});
+
+test('P1-7: the daily-loss meter states its assumed definition', () => {
+  const vm = buildViewModel(inputs());
+  const loss = vm.account?.meters.find((m) => m.key === 'daily_loss');
+  const text = 'assumes loss = −(realized today + open P&L since entry); confirm against RULES.md';
+  assert.ok(loss?.note.includes(text), loss?.note);
+  assert.ok(renderApp(vm).includes('assumes loss = −(realized today + open P&amp;L since entry); confirm against RULES.md'));
+});
+
 test('P0-2: complete Daily data still gives a known peak', () => {
   const vm = buildViewModel(inputs());
   assert.equal(vm.account?.peak.text, '$50,100.00');
