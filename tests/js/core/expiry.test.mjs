@@ -40,3 +40,22 @@ test('thirdFriday rejects bad months', () => {
   assert.throws(() => thirdFriday(2026, 13), RangeError);
   assert.throws(() => thirdFriday(2026, 0), RangeError);
 });
+
+// G3 P1-3 regressions (planner): a calendar entry for a later contract must not hide the nearer computed one.
+test('calendar entry for a later contract does not hide the nearer computed expiry (G3 P1-3)', () => {
+  const next = nextExpiration;
+  const contracts = contractsFile();
+  const cal = [{ root: 'ES', contract_code: 'ESH27', date: '2027-03-18', source: 'fixture' }];
+  assert.deepEqual(next('ES', '2026-12-18', contracts, cal), {
+    root: 'ES', contract_code: 'ESZ26', date: '2026-12-18', source: 'computed: third Friday (holiday-unadjusted)',
+  });
+  assert.equal(next('ES', '2026-12-19', contracts, cal)?.contract_code, 'ESH27');
+  assert.equal(next('ES', '2026-12-19', contracts, cal)?.source, 'fixture');
+});
+
+test('an override moved into the past suppresses the computed date for that contract (G3 P1-3)', () => {
+  const next = nextExpiration;
+  const contracts = contractsFile();
+  const cal = [{ root: 'ES', contract_code: 'ESZ26', date: '2026-12-17', source: 'override' }];
+  assert.equal(next('ES', '2026-12-18', contracts, cal)?.contract_code, 'ESH27');
+});
