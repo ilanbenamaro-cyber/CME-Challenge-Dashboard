@@ -21,3 +21,63 @@
 ### Plan consequence
 CME scrapers are written against configurable URLs with defensive parsers and must fail closed (status:error,
 last good data kept). The Sheet `Margins` tab is the manual fallback for margins. See PLAN.md risk R1.
+
+## WP-JOBS task report — 2026-09-30
+Branch / commits: `feat/jobs` (worktree branch renamed to match plan/wp-jobs.md), based on 98843f8. Not pushed or merged.
+7d3be09 envelope + atomic write + schema; 3097cc1 allowlisted http; 2debbb7 Databento bars; e872b88 refresh.yml + seed
+envelopes; 497f240 CME settlements/margins/challenge; 31f0653 refresh orchestrator + calendar validation;
+9075bac Apps Script; 73ccd3c real-DBNStore test + checkout@v5/setup-python@v6; this report is the last commit.
+
+Gate commands run + actual result lines:
+- `python3 -m pytest -q tests/py tests/boundary/test_boundary_jobs.py` → `177 passed`
+- `python3 -m pytest -q tests/py tests/boundary` → `177 passed`
+- `python3 -m jobs.refresh --dry-run --data-dir "$(mktemp -d)"` → exit 0; bars/settlements/margins/challenge/calendar all `ok`
+  (SYNTHETIC)
+- `node --test tests/boundary/boundary.test.mjs` → `# tests 6 / # pass 5 / # fail 1`. The one failure is the CSP test
+  (`docs/index.html` missing; owned by WP-UI). The workflow-permission, no-order-words and no-secrets tests pass.
+
+Acceptance items covered (A#):
+- A9: every envelope goes through `jobs/common/publish.py` (schema-validate, then atomic temp + `os.replace`). Invalid
+  output becomes a failure envelope, and invalid previous data is dropped rather than re-published. Failures keep the
+  last good `data`/`data_as_of`.
+- A10: `get_cost` is projected for every root with the exact `get_range` params before any spend. A run total over
+  $2.00 aborts with zero `get_range` calls. A non-finite or negative cost skips that root.
+- A11 (jobs part): network only via `jobs/common/http.py` (`ALLOWED_HOSTS = frozenset({"www.cmegroup.com"})`,
+  https only, no userinfo or odd ports, and each redirect hop re-checked) plus Databento in `fetch_bars.py`.
+- A12 (jobs part): pytest is green. A14: `refresh.yml` has `permissions: contents: write` only and uses only
+  `secrets.DATABENTO_API_KEY` on the run step, with no echo and no `pull_request_target`. Error text redacts the key.
+
+Facts established here:
+- databento 0.87.0: with `stype_in="continuous"` and the default `stype_out="instrument_id"`, `DBNStore.to_df()` fills
+  `symbol` with the requested continuous symbol (`ES.c.0`), and the index is `ts_event` (bar open). This was checked
+  by introspecting `InstrumentMap._resolve_mapping_tuple` and by a real offline DBN round trip
+  (`tests/py/test_fetch_bars.py::test_real_dbnstore_to_df_maps_continuous_symbol`).
+
+Deviations from plan / ADR requests:
+- Minor signature widening: `parse_settlements(payload, root, hints=None)`, `parse_margins(payload, hints=None,
+  roots=None)`, `parse_challenge(payload, account=None, hints=None)`. They are still pure and payload-first. Parse
+  hints come from `jobs/config/sources.json`.
+- `--dry-run` without `--data-dir` writes to a fresh temp dir. It refuses `--data-dir docs/data` so SYNTHETIC numbers
+  can never be committed as real data.
+- The refresh.yml commit step runs only on `refs/heads/main`. A dispatch on another branch is a no-commit smoke test.
+- `data_as_of` choices: settlements = oldest trade_date at 16:00 America/Chicago (capped at run time); challenge =
+  latest row date at 16:00 CT (capped); margins = fetch time (the requirement in force when fetched); bars = latest
+  bar open + 1h (capped).
+- `jsonschema` checks `format: date-time` only when the optional `rfc3339-validator` is installed (it is not).
+  `jobs/common/schema.py` registers a strict local RFC 3339 checker instead of adding a dependency.
+- ADR request (low): `generated_at` changes every run, so the bot commits data hourly (~144 commits/week) even when
+  nothing else changes. If that is unwanted, the options are to skip commits when only `generated_at` changed (the
+  site would then need to use `data_as_of` for freshness, which it already does), or to accept it.
+
+Known gaps / risks:
+- ALL CME sources are UNVERIFIED (`verified:false`). The settlements URL template and product ids (ES 133, NQ 146,
+  CL 425, GC 437) were recalled from memory and are unchecked. The margins URL and the challenge URL and account are
+  null, so those jobs report "source not configured" (status:error) until a human fills them after a live capture.
+  Fixture shapes are invented (SYNTHETIC).
+- Databento: the request `end` = the current hour. If GLBX.MDP3 availability lags, Databento may reject the end
+  bound. That shows as per-root errors / status error, not bad data. Unverified without a key.
+- robots.txt and the terms stance of cmegroup.com were never observed (recon blocked). Check them before relying on
+  the scrapers.
+- `pandas` is used directly (fake client, tests) but comes in only transitively via `databento`.
+- Apps Script: tested under Node with stubbed services only. The `spreadsheets.readonly` manifest scope is untested on
+  a real deploy; the README gives the fallback.
