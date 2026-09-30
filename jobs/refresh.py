@@ -18,7 +18,7 @@ from typing import Callable
 from jobs import fetch_bars, fetch_challenge, fetch_margins, fetch_settlements, validate_calendar
 from jobs.common import config
 from jobs.common.envelope import failure_envelope, load_previous, utc_now
-from jobs.common.publish import publish, safe_error
+from jobs.common.publish import publish, safe_error, same_ignoring_generated_at
 
 Runner = Callable[[datetime, Path, bool], dict]
 
@@ -52,6 +52,7 @@ def run_all(names: list[str], data_dir: Path, dry_run: bool, now: datetime | Non
             print_fn(_summary(name, validate_calendar.run(now)))
             continue
         out = data_dir / f"{name}.json"
+        before = load_previous(out)
         try:
             env = RUNNERS[name](now, out, dry_run)
         except Exception as exc:  # noqa: BLE001 - isolate: a crashed job becomes a failure envelope
@@ -64,6 +65,9 @@ def run_all(names: list[str], data_dir: Path, dry_run: bool, now: datetime | Non
                 write_failed = True
                 print_fn(f"{name}: WRITE FAILED {safe_error(write_exc)}")
                 continue
+        if same_ignoring_generated_at(env, before):
+            print_fn(f"{name}: unchanged")  # ADR-005: publish() skipped the write
+            continue
         print_fn(_summary(name, env))
     return 1 if write_failed else 0
 

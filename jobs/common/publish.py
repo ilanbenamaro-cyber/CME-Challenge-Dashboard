@@ -7,7 +7,7 @@ from typing import Iterable
 
 import jsonschema
 
-from jobs.common.envelope import failure_envelope, write_atomic
+from jobs.common.envelope import failure_envelope, load_previous, write_atomic
 from jobs.common.schema import validate
 
 MAX_ERROR_LEN = 300
@@ -42,8 +42,20 @@ def checked(dataset: str, source: str, envelope: dict, previous: dict | None, no
         return fallback
 
 
+def same_ignoring_generated_at(a: dict | None, b: dict | None) -> bool:
+    """True when both envelopes are equal apart from `generated_at` (ADR-005)."""
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return False
+    return {k: v for k, v in a.items() if k != "generated_at"} == {k: v for k, v in b.items() if k != "generated_at"}
+
+
 def publish(dataset: str, source: str, envelope: dict, out: Path, previous: dict | None, now: datetime) -> dict:
-    """Schema-check `envelope` (fail closed), then write it atomically to `out`. Write errors propagate."""
+    """Schema-check `envelope` (fail closed), then write it atomically to `out`. Write errors propagate.
+
+    ADR-005: if the file on disk already equals the result apart from `generated_at`, it is not rewritten
+    (no hourly commit churn; the site's freshness uses data_as_of).
+    """
     final = checked(dataset, source, envelope, previous, now)
-    write_atomic(out, final)
+    if not same_ignoring_generated_at(final, load_previous(out)):
+        write_atomic(out, final)
     return final

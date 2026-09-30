@@ -43,6 +43,40 @@ def test_one_job_raising_does_not_block_others(tmp_path, now, monkeypatch):
             assert env["status"] == "ok"
 
 
+def test_adr005_unchanged_envelope_is_not_rewritten(tmp_path, now):
+    # challenge data_as_of is pinned to the fixture's trade date, so a later run differs only in generated_at.
+    import os
+    from datetime import timedelta
+
+    refresh.run_all(["challenge"], tmp_path, dry_run=True, now=now, print_fn=lambda s: None)
+    out = tmp_path / "challenge.json"
+    os.utime(out, (1_000_000_000, 1_000_000_000))
+    before_bytes, before_mtime = out.read_bytes(), out.stat().st_mtime_ns
+    lines = []
+    assert refresh.run_all(["challenge"], tmp_path, dry_run=True, now=now + timedelta(hours=1),
+                           print_fn=lines.append) == 0
+    assert lines == ["challenge: unchanged"]
+    assert out.read_bytes() == before_bytes
+    assert out.stat().st_mtime_ns == before_mtime
+
+
+def test_adr005_changed_data_as_of_is_written(tmp_path, now):
+    # margins data_as_of is the fetch time, so a later run changes it and must be written.
+    import os
+    from datetime import timedelta
+
+    refresh.run_all(["margins"], tmp_path, dry_run=True, now=now, print_fn=lambda s: None)
+    out = tmp_path / "margins.json"
+    os.utime(out, (1_000_000_000, 1_000_000_000))
+    first = json.loads(out.read_text())
+    lines = []
+    refresh.run_all(["margins"], tmp_path, dry_run=True, now=now + timedelta(hours=1), print_fn=lines.append)
+    second = json.loads(out.read_text())
+    assert lines[0].startswith("margins: ok")
+    assert second["data_as_of"] != first["data_as_of"] and second["generated_at"] != first["generated_at"]
+    assert out.stat().st_mtime_ns != 1_000_000_000 * 10**9
+
+
 def test_crashed_job_keeps_previous_data(tmp_path, now, monkeypatch):
     refresh.run_all(["margins"], tmp_path, dry_run=True, now=now, print_fn=lambda s: None)
     good = json.loads((tmp_path / "margins.json").read_text())
