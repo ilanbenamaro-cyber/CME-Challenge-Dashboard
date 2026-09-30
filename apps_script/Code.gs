@@ -23,15 +23,17 @@ function doGet(e) {
   }
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    // Date-only cells are midnight in the spreadsheet's own zone; format them there (G3 P1-6).
+    var sheetTz = ss.getSpreadsheetTimeZone() || TZ;
     var tabs = {};
     REQUIRED_TABS.forEach(function (name) {
       var sheet = ss.getSheetByName(name);
       if (!sheet) throw new Error('missing tab ' + name);
-      tabs[name] = readTab_(sheet, name);
+      tabs[name] = readTab_(sheet, name, sheetTz);
     });
     OPTIONAL_TABS.forEach(function (name) {
       var sheet = ss.getSheetByName(name);
-      if (sheet) tabs[name] = readTab_(sheet, name);
+      if (sheet) tabs[name] = readTab_(sheet, name, sheetTz);
     });
     return json_({
       schema_version: 1,
@@ -47,9 +49,10 @@ function doGet(e) {
  * Header row -> keys; one object per non-empty data row.
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
  * @param {string} tabName
+ * @param {string} sheetTz spreadsheet time zone, used for date-only cells
  * @return {Object[]}
  */
-function readTab_(sheet, tabName) {
+function readTab_(sheet, tabName, sheetTz) {
   var values = sheet.getDataRange().getValues();
   if (values.length < 2) return [];
   var header = values[0].map(function (h) { return String(h).trim(); });
@@ -62,7 +65,7 @@ function readTab_(sheet, tabName) {
     for (var c = 0; c < header.length; c++) {
       var key = header[c];
       if (!key) continue;
-      obj[key] = cell_(row[c], tabName === 'Daily' && key === 'date');
+      obj[key] = cell_(row[c], tabName === 'Daily' && key === 'date', sheetTz);
     }
     rows.push(obj);
   }
@@ -70,14 +73,15 @@ function readTab_(sheet, tabName) {
 }
 
 /**
- * Raw cell -> JSON value. Dates become ISO-8601 with offset (America/Chicago); Daily.date becomes yyyy-MM-dd.
+ * Raw cell -> JSON value. Date-times become ISO-8601 with offset (America/Chicago; same instant).
+ * Daily.date becomes yyyy-MM-dd in the spreadsheet's zone, so the calendar day typed is the day sent.
  * Blank stays "" (never 0).
  */
-function cell_(value, dateOnly) {
+function cell_(value, dateOnly, sheetTz) {
   if (value === null || value === undefined) return '';
   if (Object.prototype.toString.call(value) === '[object Date]') {
     if (isNaN(value.getTime())) return '';
-    return Utilities.formatDate(value, TZ, dateOnly ? DATE_FMT : DATETIME_FMT);
+    return dateOnly ? Utilities.formatDate(value, sheetTz || TZ, DATE_FMT) : Utilities.formatDate(value, TZ, DATETIME_FMT);
   }
   return value;
 }

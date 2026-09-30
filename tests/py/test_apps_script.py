@@ -29,14 +29,15 @@ function sheet(values) {
 const ctx = {
   PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'SHEET_KEY' ? sc.secret : null) }) },
   SpreadsheetApp: { getActiveSpreadsheet: () => ({
+    getSpreadsheetTimeZone: () => sc.sheetTz || 'America/Chicago',
     getSheetByName: (n) => (sc.tabs[n] ? sheet(sc.tabs[n]) : null) }) },
   Utilities: {
     DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
     computeDigest: (alg, s) => Array.from(crypto.createHash(alg).update(s, 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b)),
     formatDate: (d, tz, fmt) => {
-      // Test stub: fixed CDT offset is fine for the fixture dates (all in September).
-      const p = new Date(d.getTime() - 5 * 3600e3).toISOString();
-      return fmt === 'yyyy-MM-dd' ? p.slice(0, 10) : p.slice(0, 19) + '-05:00';
+      // Test stub: dates honour tz via Intl; date-times use a fixed CDT offset (fixture dates are all in September).
+      if (fmt === 'yyyy-MM-dd') return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(d);
+      return new Date(d.getTime() - 5 * 3600e3).toISOString().slice(0, 19) + '-05:00';
     },
   },
   ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ setMimeType: () => ({ text: t }) }) },
@@ -60,11 +61,11 @@ TABS = {
 }
 
 
-def _run(secret, event, tabs=TABS):
+def _run(secret, event, tabs=TABS, sheet_tz=None):
     node = shutil.which("node")
     if not node:
         pytest.skip("node not installed")
-    r = subprocess.run([node, "-e", HARNESS, str(CODE), json.dumps({"secret": secret, "event": event, "tabs": tabs})],
+    r = subprocess.run([node, "-e", HARNESS, str(CODE), json.dumps({"secret": secret, "event": event, "tabs": tabs, "sheetTz": sheet_tz})],
                        capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
     return json.loads(r.stdout)
@@ -106,3 +107,15 @@ def test_optional_margins_tab():
     out = _run("k" * 20, {"parameter": {"key": "k" * 20}}, tabs=tabs)
     jsonschema.validate(out["body"], SHEET_SCHEMA)
     assert out["body"]["tabs"]["Margins"] == [{"root": "ES", "initial_usd": 1, "maintenance_usd": "", "as_of": ""}]
+
+
+def test_daily_date_uses_spreadsheet_time_zone():
+    """G3 P1-6: a date-only cell is midnight in the sheet's zone; formatting it in CT shifted it a day early."""
+    tabs = {
+        "Trades": [TABS["Trades"][0]],
+        # 2026-09-29 00:00 in New York = 04:00Z = 2026-09-28 23:00 CDT.
+        "Daily": [["date", "reported_pnl_usd", "reported_balance_usd"], [{"$date": "2026-09-29T04:00:00Z"}, 1, 2]],
+    }
+    secret = "s" * 32
+    out = _run(secret, {"parameter": {"key": secret}}, tabs=tabs, sheet_tz="America/New_York")
+    assert out["body"]["tabs"]["Daily"][0]["date"] == "2026-09-29"
