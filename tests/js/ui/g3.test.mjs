@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildViewModel } from '../../../docs/js/ui/viewmodel.mjs';
 import { renderApp } from '../../../docs/js/ui/render.mjs';
-import { sheetRaw, sheetResult, inputs, noSectionErrors } from './fixtures.mjs';
+import { NOW, MIN, sheetRaw, sheetResult, inputs, noSectionErrors } from './fixtures.mjs';
 
 // P0-1 (/tmp/g3/vm_invalid_open.mjs): an open ES row with side "Buy" is rejected by normalizeSheet.
 const BAD_OPEN = { id: 'O9', root: 'ES', side: 'Buy', qty: 3, entry: 5795, exit: '', entry_time: '2026-09-30T13:00:00-05:00', exit_time: '', fees_usd: 0, notes: '' };
@@ -95,6 +95,55 @@ test('P0-2: Sheet not loaded makes peak UNKNOWN, not the starting balance', () =
   assert.equal(vm.account.peak.known, false);
   assert.equal(vm.account.peak.text, 'UNKNOWN');
   assert.ok(!renderApp(vm).includes('$50,000.00'), 'starting balance shown as a known peak');
+});
+
+/**
+ * Extract one data-live region / meter from rendered HTML.
+ * @param {string} html
+ * @param {string} marker attribute text that starts the region, e.g. 'data-meter="drawdown"'
+ */
+function region(html, marker) {
+  const i = html.indexOf(marker);
+  assert.ok(i >= 0, `missing ${marker}`);
+  return html.slice(i, i + 1500);
+}
+
+test('P1-1: stale Sheet (refetch failed, last good kept) puts a STALE badge on meters, sizer and positions', () => {
+  // /tmp/g3/vm_attacks.mjs #1: main.mjs keeps the last good data and sets `error`; last fetch 90 min ago.
+  const base = inputs();
+  const sheet = { ...sheetResult(sheetRaw()), error: 'network: Failed to fetch', fetchedAtMs: NOW - 90 * MIN };
+  const vm = buildViewModel({ ...base, sheet });
+  noSectionErrors(vm);
+  assert.ok(vm.account && vm.sizer && vm.positions);
+  for (const m of vm.account.meters) assert.match(m.badge ?? '', /STALE 1h 30m/, m.key);
+  assert.match(vm.sizer.badge ?? '', /STALE 1h 30m/);
+  assert.match(vm.sizer.available.badge ?? '', /STALE 1h 30m/);
+  assert.match(vm.positions.badge ?? '', /STALE 1h 30m/);
+  assert.match(vm.positions.std_equiv.badge ?? '', /STALE 1h 30m/);
+  assert.match(vm.account.peak.badge ?? '', /STALE 1h 30m/);
+  assert.match(vm.account.margin_used.badge ?? '', /STALE 1h 30m/);
+  const html = renderApp(vm);
+  for (const key of ['daily_loss', 'drawdown', 'margin']) assert.match(region(html, `data-meter="${key}"`), /STALE 1h 30m/, key);
+  assert.match(region(html, 'data-live="sizer"'), /STALE 1h 30m/);
+  assert.match(region(html, 'data-live="positions"'), /STALE 1h 30m/);
+});
+
+test('P1-1: stale-ish bars (partial) mark the meters and sizer when positions are open', () => {
+  const base = inputs();
+  const bars = { ...base.envs.bars, status: /** @type {const} */ ('partial'), errors: ['NQ failed'] };
+  const vm = buildViewModel({ ...base, envs: { ...base.envs, bars: /** @type {any} */ (bars) } });
+  noSectionErrors(vm);
+  assert.ok(vm.account && vm.sizer);
+  assert.match(vm.account.meters[0]?.badge ?? '', /bars.*PARTIAL/);
+  assert.match(vm.sizer.badge ?? '', /bars.*PARTIAL/);
+});
+
+test('P1-1: all inputs fresh gives no badges on meters, sizer or positions', () => {
+  const vm = buildViewModel(inputs());
+  assert.ok(vm.account && vm.sizer && vm.positions);
+  for (const m of vm.account.meters) assert.equal(m.badge, null, m.key);
+  assert.equal(vm.sizer.badge, null);
+  assert.equal(vm.positions.badge, null);
 });
 
 test('P0-2: complete Daily data still gives a known peak', () => {

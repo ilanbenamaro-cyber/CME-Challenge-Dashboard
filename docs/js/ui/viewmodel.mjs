@@ -90,6 +90,7 @@ import { ctDate, ctParts, daysBetween, tradeDate, weekdayOf } from '../core/time
  * @property {string} limit_text
  * @property {string} remaining_text
  * @property {string} note
+ * @property {string|null} badge  STALE/PARTIAL marker (with age) when an input dataset is not fresh
  */
 
 /**
@@ -122,6 +123,7 @@ import { ctDate, ctParts, daysBetween, tradeDate, weekdayOf } from '../core/time
  * @property {string} reason
  * @property {PositionRow[]} rows
  * @property {Cell} std_equiv
+ * @property {string|null} badge   STALE marker when the Sheet data behind the list is not fresh
  */
 
 /**
@@ -140,6 +142,7 @@ import { ctDate, ctParts, daysBetween, tradeDate, weekdayOf } from '../core/time
  * @property {Cell} atr
  * @property {string[]} reasons
  * @property {string[]} warnings
+ * @property {string|null} badge   STALE/PARTIAL marker (with age) when an input dataset is not fresh
  */
 
 /**
@@ -350,6 +353,34 @@ function staleBadge(f) {
   if (f.state === 'error') return f.age_min === null ? 'ERROR' : `STALE ${fmtAge(f.age_min)} (job error)`;
   if (f.state === 'partial') return 'PARTIAL';
   return null;
+}
+
+/**
+ * Combined badge for a value derived from several datasets: one "<name> STALE <age>" part per input
+ * that is not fresh (e.g. "Sheet STALE 1h 30m (job error) · bars PARTIAL"), or null when all are fresh.
+ * @param {Ctx} ctx
+ * @param {(DatasetName|'sheet')[]} names
+ * @returns {string|null}
+ */
+function inputsBadge(ctx, names) {
+  /** @type {string[]} */
+  const parts = [];
+  for (const n of names) {
+    if (n === 'sheet' && ctx.trades === null) continue; // no Sheet data at all: values are UNKNOWN, not stale
+    const b = staleBadge(ctx.fr[n]);
+    if (b) parts.push(`${n === 'sheet' ? 'Sheet' : n} ${b}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+/**
+ * Inputs behind account-level figures (equity, margin in use, meters, sizer): the Sheet, plus bars when
+ * open positions are marked.
+ * @param {Ctx} ctx
+ * @returns {string|null}
+ */
+function accountBadge(ctx) {
+  return inputsBadge(ctx, openKnownRows(ctx).length > 0 ? ['sheet', 'bars'] : ['sheet']);
 }
 
 /** States whose `data` may be displayed (with a badge when not fresh). */
@@ -757,9 +788,10 @@ function computeMoney(ctx) {
  * @param {string} key
  * @param {string} label
  * @param {string} note
+ * @param {string|null} badge
  * @returns {MeterVM}
  */
-function meterVM(m, key, label, note) {
+function meterVM(m, key, label, note, badge) {
   const ratio = m.used_ratio;
   return {
     key,
@@ -771,6 +803,7 @@ function meterVM(m, key, label, note) {
     limit_text: fmtUsd(m.limit_cents),
     remaining_text: fmtUsd(m.remaining_cents),
     note: m.level === 'unknown' && m.reason ? `${note}${note ? ' · ' : ''}${m.reason}` : note,
+    badge,
   };
 }
 
@@ -781,18 +814,20 @@ function meterVM(m, key, label, note) {
  */
 function buildAccount(ctx, money) {
   const sheetBadge = ctx.trades !== null ? staleBadge(ctx.fr.sheet) : null;
-  const barsBadge = staleBadge(ctx.fr.bars);
+  const acctBadge = accountBadge(ctx);
   const realized = usdCell(money.realized, money.realized === null ? money.realizedReason : `closed trades, trade date ${ctx.td}`);
   realized.badge = sheetBadge;
   const open = usdCell(money.open, money.open === null ? money.openReason : ctx.open && ctx.open.length > 0 ? 'marked at last 1h close' : 'flat');
-  if (money.open !== null && ctx.open && ctx.open.length > 0) open.badge = barsBadge ?? sheetBadge;
+  if (money.open !== null && ctx.open && ctx.open.length > 0) open.badge = acctBadge;
   const equity = usdCell(money.equity, money.equity === null ? money.equityReason : 'start + closed + open');
   equity.sign = null;
-  equity.badge = sheetBadge;
+  equity.badge = acctBadge;
   const peak = usdCell(money.peak, money.peakReason);
   peak.sign = null;
+  peak.badge = sheetBadge;
   const marginUsed = usdCell(money.marginUsed, money.marginUsed === null ? money.marginReason : `${ctx.form.hold} hold, ${ctx.basis ?? '?'} basis`);
   marginUsed.sign = null;
+  marginUsed.badge = acctBadge;
 
   /** @type {Meter} */
   let loss;
@@ -825,9 +860,9 @@ function buildAccount(ctx, money) {
     margin_used: marginUsed,
     trade_date: ctx.td,
     meters: [
-      meterVM(loss, 'daily_loss', 'Daily loss vs cap', 'loss = −(realized + open)'),
-      meterVM(dd, 'drawdown', 'Drawdown vs max', 'assumes EOD trailing: peak = max(start, EOD balances)'),
-      meterVM(mm, 'margin', 'Margin in use vs equity', `${ctx.form.hold} hold multiplier`),
+      meterVM(loss, 'daily_loss', 'Daily loss vs cap', 'loss = −(realized + open)', acctBadge),
+      meterVM(dd, 'drawdown', 'Drawdown vs max', 'assumes EOD trailing: peak = max(start, EOD balances)', acctBadge),
+      meterVM(mm, 'margin', 'Margin in use vs equity', `${ctx.form.hold} hold multiplier`, acctBadge),
     ],
   };
 }
@@ -842,7 +877,7 @@ function buildPositions(ctx) {
   const allowed = ruleValue(ctx.rs, 'allowed_roots');
   if (ctx.open === null) {
     const why = ctx.trades === null ? ctx.fr.sheet.reason : ctx.openWhy;
-    return { known: false, reason: `Positions UNKNOWN — ${why}`, rows: [], std_equiv: unknownCell(why) };
+    return { known: false, reason: `Positions UNKNOWN — ${why}`, rows: [], std_equiv: unknownCell(why), badge: null };
   }
   /** @type {PositionRow[]} */
   const rows = ctx.open.map((t) => {
@@ -878,7 +913,9 @@ function buildPositions(ctx) {
     const level = se > max ? 'breach' : max > 0 && se >= WARN_RATIO * max && se > 0 ? 'warn' : 'ok';
     std = cell({ text: `${fmtQty(se)} / ${fmtQty(max)}`, known: true, level, note: 'standard-equivalent contracts open vs max_contracts' });
   }
-  return { known: true, reason: rows.length === 0 ? 'Flat — no open positions in the Sheet' : '', rows, std_equiv: std };
+  const badge = inputsBadge(ctx, ['sheet']);
+  std.badge = badge;
+  return { known: true, reason: rows.length === 0 ? 'Flat — no open positions in the Sheet' : '', rows, std_equiv: std, badge };
 }
 
 /**
@@ -945,6 +982,8 @@ function buildSizer(ctx, money) {
     ? (money.equity === null ? `equity UNKNOWN (${money.equityReason})` : `margin in use UNKNOWN (${money.marginReason})`)
     : 'equity − margin in use');
   available.sign = null;
+  const badge = accountBadge(ctx);
+  available.badge = badge;
   /** @type {string[]} */
   const warnings = [];
   const allowed = ruleValue(ctx.rs, 'allowed_roots');
@@ -960,6 +999,7 @@ function buildSizer(ctx, money) {
     multiplier_text: mult === null ? UNKNOWN_TEXT : `×${mult}`,
     atr: atrCell(ctx, f.root),
     warnings,
+    badge,
   };
   /** @type {string[]} */
   const inputProblems = [];
