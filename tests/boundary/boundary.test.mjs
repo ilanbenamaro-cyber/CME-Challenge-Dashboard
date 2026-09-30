@@ -53,10 +53,11 @@ test('CSP restricts connect-src to self and Apps Script hosts; no eval (A11)', (
   const p = join(ROOT, 'docs', 'index.html');
   assert.ok(existsSync(p), 'docs/index.html missing');
   const html = readFileSync(p, 'utf8');
-  const m = html.match(/<meta\s+http-equiv=["']Content-Security-Policy["']\s+content=["']([^"']+)["']/i);
+  const m = html.match(/<meta\s+http-equiv=["']Content-Security-Policy["']\s+content=(?:"([^"]+)"|'([^']+)')/i);
   assert.ok(m, 'CSP meta tag missing');
+  const policy = m[1] ?? m[2];
   const csp = Object.fromEntries(
-    m[1].split(';').map((s) => s.trim()).filter(Boolean).map((d) => {
+    policy.split(';').map((s) => s.trim()).filter(Boolean).map((d) => {
       const [k, ...v] = d.split(/\s+/);
       return [k, v];
     }),
@@ -67,7 +68,7 @@ test('CSP restricts connect-src to self and Apps Script hosts; no eval (A11)', (
   );
   assert.deepEqual(csp['script-src'], ["'self'"]);
   assert.deepEqual(csp['default-src'], ["'self'"]);
-  assert.ok(!m[1].includes('unsafe-eval'), 'unsafe-eval present');
+  assert.ok(!policy.includes('unsafe-eval'), 'unsafe-eval present');
   assert.ok(!(csp['script-src'] ?? []).includes("'unsafe-inline'"), 'inline scripts allowed');
 });
 
