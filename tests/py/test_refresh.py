@@ -177,4 +177,9 @@ def test_calendar_validation_catches_problems(tmp_path, now):
 def test_committed_seed_envelopes_are_valid(name):
     env = json.loads((config.DEFAULT_DATA_DIR / f"{name}.json").read_text())
     validate(name, env)
-    assert env["status"] == "error" and env["data"] is None and "SYNTHETIC" not in env["source"]
+    # Committed files start as "not yet fetched" seeds and are later replaced by the bot with real data, so the
+    # invariant is: schema-valid, never SYNTHETIC fixture data, and no data without a data_as_of (D7).
+    assert "SYNTHETIC" not in env["source"]
+    assert (env["data"] is None) == (env["data_as_of"] is None)
+    if env["status"] != "error":
+        assert env["data"] is not None

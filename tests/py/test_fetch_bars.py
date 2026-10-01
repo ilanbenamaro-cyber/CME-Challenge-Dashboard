@@ -295,3 +295,44 @@ def test_other_422_errors_are_not_retried(tmp_path):
     env = _run(now, tmp_path, rec)
     assert env["status"] == "error"
     assert sum(1 for n, _ in rec.calls if n == "get_range") == 4
+
+
+def _seed_previous(tmp_path, now, rec):
+    """First run publishes the full 72h window; returns the published envelope."""
+    return _run(now, tmp_path, rec)
+
+
+def test_incremental_second_run_fetches_only_new_bars(tmp_path):
+    t0 = datetime(2026, 10, 6, 15, 7, tzinfo=timezone.utc)
+    first = _seed_previous(tmp_path, t0, Recorder())
+    last_t = first["data"]["roots"]["ES"]["bars"][-1]["t"]           # 2026-10-06T14:00:00Z
+    rec = Recorder()
+    second = _run(t0 + timedelta(hours=1), tmp_path, rec)
+    ranges = [p for n, p in rec.calls if n == "get_range"]
+    assert ranges and all(p["start"] == last_t and p["end"] == "2026-10-06T16:00:00Z" for p in ranges)
+    for i, (n, p) in enumerate(rec.calls):  # A10 still holds on the incremental params
+        if n == "get_range":
+            assert ("get_cost", p) in rec.calls[:i]
+    es = second["data"]["roots"]["ES"]["bars"]
+    n_first = len(first["data"]["roots"]["ES"]["bars"])                # weekend hours have no bars
+    assert es[-1]["t"] == "2026-10-06T15:00:00Z" and len(es) == min(n_first + 1, fetch_bars.KEEP_BARS)
+    assert [b["t"] for b in es] == sorted({b["t"] for b in es})       # merged, de-duplicated, ordered
+
+
+def test_incremental_same_hour_makes_no_request(tmp_path):
+    t0 = datetime(2026, 10, 6, 15, 7, tzinfo=timezone.utc)
+    first = _seed_previous(tmp_path, t0, Recorder())
+    rec = Recorder()
+    # Same hour: window end 15:00Z, last bar opened 14:00Z -> still one possible bar; a run at 15:59 re-asks.
+    _run(t0 + timedelta(minutes=50), tmp_path, rec)
+    assert all(p["start"] == first["data"]["roots"]["ES"]["bars"][-1]["t"] for n, p in rec.calls)
+
+
+def test_no_new_bars_keeps_published_bars_without_error(tmp_path):
+    t0 = datetime(2026, 10, 6, 15, 7, tzinfo=timezone.utc)
+    first = _seed_previous(tmp_path, t0, Recorder())
+    empty = pd.DataFrame(columns=["open", "high", "low", "close", "volume", "symbol"])
+    rec = Recorder(frames={r: empty for r in ["ES", "NQ", "CL", "GC"]})
+    second = _run(t0 + timedelta(hours=1), tmp_path, rec)
+    assert second["status"] == "ok", second["errors"]
+    assert second["data"]["roots"]["ES"]["bars"] == first["data"]["roots"]["ES"]["bars"]

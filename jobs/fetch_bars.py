@@ -1,7 +1,8 @@
 """Hourly OHLCV bars from Databento (D5), cost-checked before any spend (A10).
 
 For each parent root, metadata.get_cost is called with exactly the same parameters that will later be
-passed to timeseries.get_range. All costs are projected first; if the run total is over COST_CAP_USD the
+passed to timeseries.get_range. Fetches are incremental: each root starts at its last published bar (merged,
+last 72 kept), so an hourly run costs ~1-2 bars per root. All costs are projected first; if the run total is over COST_CAP_USD the
 job aborts with zero range requests. Micro roots are aliased to their parent's bars.
 
 Symbology note (databento 0.87.0, checked by introspection of DBNStore.to_df / InstrumentMap): with
@@ -61,6 +62,38 @@ def licensed_end(exc: BaseException) -> datetime | None:
         return None
     t = datetime.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
     return t.replace(minute=0, second=0, microsecond=0)
+
+
+def _parse_t(t: Any) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(t).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def previous_bars(previous: dict | None, root: str) -> list[dict]:
+    """Bars already published for `root` (last good data), or [] if none/unusable."""
+    try:
+        bars = previous["data"]["roots"][root]["bars"]  # type: ignore[index]
+    except (TypeError, KeyError):
+        return []
+    return [b for b in bars if isinstance(b, dict) and _parse_t(b.get("t")) is not None] if isinstance(bars, list) else []
+
+
+def incremental_start(prev: list[dict], window_start: datetime) -> datetime:
+    """Incremental fetch: start at the last published bar (refetched once, cheap and safe) when it lies inside the
+    window; otherwise the full window. Keeps each hourly run to ~1-2 bars per root instead of 72."""
+    if not prev:
+        return window_start
+    last = _parse_t(prev[-1]["t"])
+    return last if last is not None and last >= window_start else window_start
+
+
+def merge_bars(prev: list[dict], new: list[dict], keep: int) -> list[dict]:
+    """Union by bar open time (new wins), sorted, last `keep` bars."""
+    by_t = {b["t"]: b for b in prev}
+    by_t.update({b["t"]: b for b in new})
+    return [by_t[t] for t in sorted(by_t)][-keep:]
 
 
 def request_params(root: str, start: datetime, end: datetime) -> dict:
@@ -157,8 +190,13 @@ def run(
     # 1) Project the cost of every request before spending anything.
     planned: list[tuple[str, dict]] = []
     total = 0.0
+    unchanged: list[str] = []
     for root in roots:
-        params = request_params(root, start, end)
+        root_start = incremental_start(previous_bars(previous, root), start)
+        if root_start >= end:
+            unchanged.append(root)  # nothing new can exist yet: no request, no cost
+            continue
+        params = request_params(root, root_start, end)
         try:
             cost = _num(client.metadata.get_cost(**params))
         except Exception as exc:  # noqa: BLE001
@@ -171,7 +209,7 @@ def run(
         planned.append((root, params))
     if total > COST_CAP_USD:
         return fail(errors + [f"cost cap: projected ${total:.4f} > ${COST_CAP_USD:.2f}; nothing requested"])
-    if not planned:
+    if not planned and not unchanged:
         return fail(errors or ["no roots to request"])
 
     # 2) Spend: identical params to the cost check.
@@ -179,11 +217,29 @@ def run(
     latest: datetime | None = None
     delayed_to: datetime | None = None
 
+    class _NothingNew(Exception):
+        """The licensed window holds no bar newer than what is already published."""
+
+    def keep_previous(root: str) -> None:
+        nonlocal latest
+        prev = previous_bars(previous, root)
+        if prev:
+            result_roots[root] = {"symbol": symbol_for(root), "bars": prev[-KEEP_BARS:]}
+            last_open = _parse_t(prev[-1]["t"])
+            if last_open is not None:
+                latest = last_open if latest is None else max(latest, last_open)
+
+    for root in unchanged:
+        keep_previous(root)
+
     def delayed_params(root: str) -> dict:
         """Params for the licensed (delayed) window, cost-checked against the cap before any spend (A10)."""
         nonlocal total
         assert delayed_to is not None
-        p = request_params(root, delayed_to - LOOKBACK, delayed_to)
+        p_start = incremental_start(previous_bars(previous, root), delayed_to - LOOKBACK)
+        if p_start >= delayed_to:
+            raise _NothingNew()
+        p = request_params(root, p_start, delayed_to)
         cost = _num(client.metadata.get_cost(**p))
         if cost is None or cost < 0 or total + cost > COST_CAP_USD:
             raise RuntimeError("cost check for the licensed window failed or exceeds the cost cap")
@@ -208,17 +264,23 @@ def run(
                 store = client.timeseries.get_range(**params)
             df = store.to_df()
             bars, dropped = frame_to_bars(df, symbol)
+        except _NothingNew:
+            keep_previous(root)
+            continue
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{root}: range request failed: {safe_error(exc, [key])}")
             continue
         if dropped:
             errors.append(f"{root}: dropped {dropped} unusable bar rows")
-        if not bars:
+        prev = previous_bars(previous, root)
+        if not bars and not prev:
             errors.append(f"{root}: no bars returned")
             continue
-        result_roots[root] = {"symbol": symbol, "bars": bars}
-        last_open = datetime.fromisoformat(bars[-1]["t"].replace("Z", "+00:00"))
-        latest = last_open if latest is None else max(latest, last_open)
+        merged = merge_bars(prev, bars, KEEP_BARS)  # no new bars (e.g. market closed) keeps the published ones
+        result_roots[root] = {"symbol": symbol, "bars": merged}
+        last_open = _parse_t(merged[-1]["t"])
+        if last_open is not None:
+            latest = last_open if latest is None else max(latest, last_open)
 
     if not result_roots or latest is None:
         return fail(errors or ["no bars returned for any root"])
