@@ -2,6 +2,7 @@
 // Sheet ids and notes are untrusted. No inline styles or handlers (CSP style-src/script-src 'self').
 
 import { escapeHtml, html, Raw } from './html.mjs';
+import { CONT_LABEL } from './viewmodel.mjs';
 
 /** @typedef {import('./viewmodel.mjs').ViewModel} ViewModel */
 /** @typedef {import('./viewmodel.mjs').Cell} Cell */
@@ -17,7 +18,7 @@ import { escapeHtml, html, Raw } from './html.mjs';
 /** @typedef {import('../core/types.mjs').Level} Level */
 
 /** Build marker: the e2e smoke test reads this constant from disk and expects it in the served page. */
-export const BUILD_ID = 'wp-ui-2026-09-30.3';
+export const BUILD_ID = 'wp-ui-2026-10-01.1';
 
 export { escapeHtml };
 
@@ -130,7 +131,8 @@ function errorPanel(live, title, msg) {
 function renderMeter(m) {
   const fill = m.fill === null ? html`<div class="fill fill-unknown"></div>` : html`<div class="fill fill-${m.level} f-${m.fill}"></div>`;
   return html`<div class="meter meter-${m.level}" data-meter="${m.key}">
-  <div class="meter-head"><span class="meter-label">${m.label}</span>${levelPill(m.level, m.level === 'unknown' ? 'UNKNOWN' : `${LEVEL_UI[m.level].word} ${m.pct_text}`)}</div>
+  <div class="meter-head"><span class="meter-label">${m.label}</span>${levelPill(m.level, m.level === 'unknown' ? 'UNKNOWN' : `${LEVEL_UI[m.level].word} ${m.pct_text}`)}${
+    m.badge ? html` <span class="badge">${m.badge}</span>` : ''}</div>
   <div class="bar" role="img" aria-label="${m.label}: ${m.pct_text}">${fill}</div>
   <dl class="meter-nums">
     <div><dt>used</dt><dd>${m.used_text}</dd></div>
@@ -187,9 +189,10 @@ export function renderPositions(vm) {
     <td class="mono">${r.id}</td><td>${r.root}</td><td class="side-${r.side}">${r.side.toUpperCase()}</td><td class="num">${r.qty}</td>
     <td class="num">${r.entry_text}</td><td class="num">${renderCell(r.mark, { noNote: true })}</td><td class="num">${renderCell(r.pnl)}</td>
     </tr>${r.notes || r.flags.length ? html`<tr class="subrow"><td colspan="7" class="notes">${r.notes ? html`<span class="note-inline">Notes: ${r.notes}</span>` : ''}${r.flags.length ? html` ${levelPill('breach')} ${r.flags.join('; ')}` : ''}</td></tr>` : ''}`)}</tbody>
-</table></div>`;
+</table></div>
+<p class="note">Mark = last 1h close of the ${CONT_LABEL} series; during the roll it may not be the contract month you hold.</p>`;
   return html`<section class="panel" id="p-positions" data-live="positions">
-  <h2>Positions</h2>
+  <h2>Positions${p.badge ? html` <span class="badge">${p.badge}</span>` : ''}</h2>
   <div class="pos-summary"><span class="kpi-label">Standard-equivalent open / max</span> ${
     p.std_equiv.level ? levelPill(p.std_equiv.level, p.std_equiv.text) : renderCell(p.std_equiv)}<span class="note">${p.std_equiv.note}</span></div>
   ${body}
@@ -237,7 +240,8 @@ export function renderSizerResult(vm) {
   if (!s) return html`<div class="sizer-result" data-live="sizer">${levelPill('unknown', 'SIZER UNAVAILABLE')} <span class="note mono">${vm.sectionErrors.sizer ?? ''}</span></div>`;
   return html`<div class="sizer-result sizer-${s.status}" data-live="sizer">
   <div class="sizer-main">
-    <div class="sizer-count"><span class="kpi-label">Contracts</span><span class="sizer-n${s.status === 'unknown' ? ' val-unknown' : ''}" data-contracts="${s.contracts_text}">${s.contracts_text}</span>${levelPill(s.level, s.status === 'zero' ? 'NONE FIT' : s.status === 'ok' ? 'OK' : 'UNKNOWN')}</div>
+    <div class="sizer-count"><span class="kpi-label">Contracts</span><span class="sizer-n${s.status === 'unknown' ? ' val-unknown' : ''}" data-contracts="${s.contracts_text}">${s.contracts_text}</span>${levelPill(s.level, s.status === 'zero' ? 'NONE FIT' : s.status === 'ok' ? 'OK' : 'UNKNOWN')}${
+      s.badge ? html` <span class="badge">${s.badge}</span>` : ''}</div>
     <p class="sizer-binding">${s.binding_text}</p>
   </div>
   <table class="limits"><tbody>
@@ -275,7 +279,7 @@ export function renderMarkets(vm) {
   /** @param {string} label @param {Cell} c */
   const item = (label, c) => html`<div class="mk"><dt>${label}</dt><dd>${renderCell(c)}</dd></div>`;
   return html`<section class="panel" id="p-markets" data-live="markets">
-  <h2>Markets <span class="h-sub">watched roots</span></h2>
+  <h2>Markets <span class="h-sub">watched roots · last = ${CONT_LABEL}</span></h2>
   ${rows.length === 0 ? html`<p class="empty">No watched roots (Settings)</p>` : ''}
   <div class="cards">${rows.map((r) => html`<article class="card">
     <h3><span class="root">${r.root}</span> <span class="h-sub">${r.name}</span></h3>

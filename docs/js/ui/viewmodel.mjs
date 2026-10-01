@@ -12,6 +12,7 @@ import { classifyFreshness, POLICIES } from '../core/freshness.mjs';
 import { resolveMargin } from '../core/margin.mjs';
 import { tradePnlCents, usdToCents } from '../core/money.mjs';
 import { ruleValue } from '../core/rules.mjs';
+import { DAILY_ROW_PREFIX, TRADES_ROW_PREFIX } from '../io/sheet.mjs';
 import { sizePosition } from '../core/sizer.mjs';
 import { ctDate, ctParts, daysBetween, tradeDate, weekdayOf } from '../core/time.mjs';
 
@@ -46,6 +47,7 @@ import { ctDate, ctParts, daysBetween, tradeDate, weekdayOf } from '../core/time
  * @property {SizerForm} sizerForm
  * @property {Partial<Record<string, string>>} [loadErrors]  io error text per dataset / 'rules' / 'contracts'
  * @property {number|null} [loadedAtMs]           when data was last loaded
+ * @property {string[]} [ruleErrors]              rules.json values of the wrong type (now null/UNKNOWN), from validateRulesFile
  */
 
 /**
@@ -89,6 +91,7 @@ import { ctDate, ctParts, daysBetween, tradeDate, weekdayOf } from '../core/time
  * @property {string} limit_text
  * @property {string} remaining_text
  * @property {string} note
+ * @property {string|null} badge  STALE/PARTIAL marker (with age) when an input dataset is not fresh
  */
 
 /**
@@ -121,6 +124,7 @@ import { ctDate, ctParts, daysBetween, tradeDate, weekdayOf } from '../core/time
  * @property {string} reason
  * @property {PositionRow[]} rows
  * @property {Cell} std_equiv
+ * @property {string|null} badge   STALE marker when the Sheet data behind the list is not fresh
  */
 
 /**
@@ -139,6 +143,7 @@ import { ctDate, ctParts, daysBetween, tradeDate, weekdayOf } from '../core/time
  * @property {Cell} atr
  * @property {string[]} reasons
  * @property {string[]} warnings
+ * @property {string|null} badge   STALE/PARTIAL marker (with age) when an input dataset is not fresh
  */
 
 /**
@@ -351,6 +356,34 @@ function staleBadge(f) {
   return null;
 }
 
+/**
+ * Combined badge for a value derived from several datasets: one "<name> STALE <age>" part per input
+ * that is not fresh (e.g. "Sheet STALE 1h 30m (job error) · bars PARTIAL"), or null when all are fresh.
+ * @param {Ctx} ctx
+ * @param {(DatasetName|'sheet')[]} names
+ * @returns {string|null}
+ */
+function inputsBadge(ctx, names) {
+  /** @type {string[]} */
+  const parts = [];
+  for (const n of names) {
+    if (n === 'sheet' && ctx.trades === null) continue; // no Sheet data at all: values are UNKNOWN, not stale
+    const b = staleBadge(ctx.fr[n]);
+    if (b) parts.push(`${n === 'sheet' ? 'Sheet' : n} ${b}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+/**
+ * Inputs behind account-level figures (equity, margin in use, meters, sizer): the Sheet, plus bars when
+ * open positions are marked.
+ * @param {Ctx} ctx
+ * @returns {string|null}
+ */
+function accountBadge(ctx) {
+  return inputsBadge(ctx, openKnownRows(ctx).length > 0 ? ['sheet', 'bars'] : ['sheet']);
+}
+
 /** States whose `data` may be displayed (with a badge when not fresh). */
 const DISPLAYABLE = new Set(['fresh', 'partial', 'stale', 'error']);
 
@@ -481,7 +514,8 @@ function calendarOf(env) {
  * @property {SheetResult|null} sheet
  * @property {Trade[]|null} trades       null = Sheet data unavailable
  * @property {string[]} tradeRowErrors
- * @property {Trade[]|null} open
+ * @property {Trade[]|null} open        null = the set of open positions is UNKNOWN (no Sheet, or any invalid Trades row)
+ * @property {string} openWhy            why `open` is null ('' when known)
  * @property {'initial'|'maintenance'|null} basis
  * @property {MarginRow[]|null} cmeRows
  * @property {boolean} cmeFresh
@@ -535,8 +569,13 @@ function buildCtx(inp) {
   const sheetData = inp.sheet?.data ?? null;
   const trades = sheetData ? sheetData.trades : null;
   const rowErrors = inp.sheet?.rowErrors ?? [];
-  const tradeRowErrors = rowErrors.filter((e) => e.startsWith('Trades row '));
+  const tradeRowErrors = rowErrors.filter((e) => e.startsWith(TRADES_ROW_PREFIX));
   const basisRule = ruleValue(rs, 'margin_basis');
+  // Any rejected Trades row could be an open position, so the open set is only known when every row is valid.
+  const n = tradeRowErrors.length;
+  const openWhy = trades === null
+    ? (frTyped.sheet.state === 'missing' ? 'Sheet not loaded' : `Sheet ${frTyped.sheet.state}: ${frTyped.sheet.reason}`)
+    : n > 0 ? `open positions UNKNOWN (${n} invalid Sheet row${n === 1 ? '' : 's'})` : '';
   const basis = basisRule.known && (basisRule.value === 'initial' || basisRule.value === 'maintenance') ? basisRule.value : null;
 
   return {
@@ -550,7 +589,8 @@ function buildCtx(inp) {
     sheet: inp.sheet,
     trades,
     tradeRowErrors,
-    open: trades ? trades.filter((t) => t.exit === null) : null,
+    open: trades && n === 0 ? trades.filter((t) => t.exit === null) : null,
+    openWhy,
     basis,
     cmeRows: marginRowsOf(inp.envs.margins ?? null),
     cmeFresh: frTyped.margins.state === 'fresh',
@@ -560,23 +600,62 @@ function buildCtx(inp) {
   };
 }
 
+/** Label for any mark or last price taken from bars (P1-5: may differ from a held back month during the roll). */
+export const CONT_LABEL = 'front-month continuous (.c.0)';
+
+/** Duration of one bar in the bars envelope (1h bars; `t` is the bar's open time). */
+const BAR_MS = 60 * 60 * 1000;
+
 /**
- * Mark price for a root from the bars envelope.
+ * Freshness of one root's own series: a synthetic envelope whose data_as_of is the last bar's close
+ * (t + 1h, capped at now for a still-forming bar), classified with the bars policy. The envelope's
+ * data_as_of is the newest bar across all roots, so a lagging root would otherwise look fresh.
+ * @param {Ctx} ctx
+ * @param {Bar} last
+ * @returns {Freshness}
+ */
+function rootFreshness(ctx, last) {
+  const t = Date.parse(last.t);
+  if (!Number.isFinite(t)) return { state: 'invalid', age_min: null, reason: `bar time unparsable: ${last.t}` };
+  const close = Math.min(t + BAR_MS, ctx.now);
+  /** @type {AnyEnvelope} */
+  const synthetic = {
+    schema_version: 1, dataset: 'bars', generated_at: new Date(close).toISOString(), data_as_of: new Date(close).toISOString(),
+    source: 'last bar close', status: 'ok', errors: [], data: null,
+  };
+  try {
+    return classifyFreshness(synthetic, ctx.now, POLICIES.bars);
+  } catch (e) {
+    return { state: 'invalid', age_min: null, reason: `freshness check failed: ${errMsg(e)}` };
+  }
+}
+
+/**
+ * Mark price for a root from the bars envelope. Usable (for open P&L) only if both the envelope and the
+ * root's own series are fresh (or the envelope partial); `fr` is the freshness the mark is shown with.
  * @param {Ctx} ctx
  * @param {string} root
- * @returns {{price: number|null, usable: boolean, bars: Bar[]|null, spec: ContractSpec|null, reason: string}}
+ * @returns {{price: number|null, usable: boolean, bars: Bar[]|null, spec: ContractSpec|null, reason: string, fr: Freshness, symbol: string}}
  */
 function markFor(ctx, root) {
-  const spec = resolveSpec(root, ctx.contracts);
-  if (!spec) return { price: null, usable: false, bars: null, spec: null, reason: `${root} not in contracts.json` };
-  const br = barsRootFor(root, ctx.contracts);
   const f = ctx.fr.bars;
-  if (!br || !DISPLAYABLE.has(f.state)) return { price: null, usable: false, bars: null, spec, reason: `bars ${f.state.toUpperCase()}` };
+  const spec = resolveSpec(root, ctx.contracts);
+  if (!spec) return { price: null, usable: false, bars: null, spec: null, reason: `${root} not in contracts.json`, fr: f, symbol: '' };
+  const br = barsRootFor(root, ctx.contracts);
+  const symbol = br ? `${br}.c.0` : '';
+  if (!br || !DISPLAYABLE.has(f.state)) return { price: null, usable: false, bars: null, spec, reason: `bars ${f.state.toUpperCase()}`, fr: f, symbol };
   const bars = barsOf(ctx.envs.bars, br);
-  if (!bars) return { price: null, usable: false, bars: null, spec, reason: `no bars for ${br}` };
+  const last = bars?.[bars.length - 1];
+  if (!bars || !last) return { price: null, usable: false, bars: null, spec, reason: `no bars for ${br}`, fr: f, symbol };
   const price = lastClose(bars);
+  const rf = rootFreshness(ctx, last);
+  if (rf.state !== 'fresh') {
+    // The root's own series is older than the policy: show the worse (older) of the two ages.
+    const worse = (f.state === 'stale' || f.state === 'error') && (f.age_min ?? -1) >= (rf.age_min ?? -1) ? f : { ...rf, state: /** @type {FreshState} */ ('stale') };
+    return { price, usable: false, bars, spec, reason: `${br} bars ${worse.state.toUpperCase()} (last bar closed ${fmtAge(rf.age_min)} ago) — open P&L not marked`, fr: worse, symbol };
+  }
   const usable = f.state === 'fresh' || f.state === 'partial';
-  return { price, usable, bars, spec, reason: usable ? '' : `bars ${f.state.toUpperCase()} — open P&L not marked` };
+  return { price, usable, bars, spec, reason: usable ? '' : `bars ${f.state.toUpperCase()} — open P&L not marked`, fr: f, symbol };
 }
 
 /**
@@ -591,9 +670,9 @@ function markCell(ctx, m) {
   return cell({
     text: fmtPrice(m.price, m.spec.tick_size),
     known: true,
-    badge: staleBadge(ctx.fr.bars),
+    badge: staleBadge(m.fr),
     level: m.usable ? null : 'warn',
-    note: last ? `last 1h close, bar ${last.t.slice(0, 16).replace('T', ' ')}Z` : '',
+    note: last ? `last 1h close, bar ${last.t.slice(0, 16).replace('T', ' ')}Z · ${m.symbol ? `${m.symbol} ` : ''}${CONT_LABEL}` : CONT_LABEL,
   });
 }
 
@@ -677,7 +756,7 @@ function computeMoney(ctx) {
   // Open P&L.
   let open = /** @type {number|null} */ (null);
   let openReason = '';
-  if (ctx.open === null) openReason = sheetWhy;
+  if (ctx.open === null) openReason = ctx.openWhy;
   else {
     let sum = 0;
     for (const t of ctx.open) {
@@ -702,21 +781,27 @@ function computeMoney(ctx) {
   else if (open === null) equityReason = `open P&L UNKNOWN: ${openReason}`;
   else equity = start + closedTotal + open;
 
+  // Peak is only known when every Daily row was accepted and carries a balance: a missing row could hold the max.
   let peak = /** @type {number|null} */ (null);
   let peakReason = '';
+  const daily = ctx.sheet?.data?.daily ?? null;
+  const dailyBad = (ctx.sheet?.rowErrors ?? []).filter((e) => e.startsWith(DAILY_ROW_PREFIX)).length;
+  const noBalance = (daily ?? []).filter((d) => !isNum(d.reported_balance_usd)).map((d) => d.date);
   if (start === null) peakReason = 'starting_balance_usd rule UNKNOWN';
-  else {
+  else if (daily === null) peakReason = `peak UNKNOWN: ${sheetWhy}`;
+  else if (dailyBad > 0) peakReason = `peak UNKNOWN: ${dailyBad} invalid Daily row${dailyBad === 1 ? '' : 's'} in the Sheet`;
+  else if (noBalance.length > 0) {
+    peakReason = `peak UNKNOWN: Daily ${noBalance.slice(0, 3).join(', ')}${noBalance.length > 3 ? ' …' : ''} has no reported balance`;
+  } else {
     peak = start;
-    for (const d of ctx.sheet?.data?.daily ?? []) {
-      if (isNum(d.reported_balance_usd)) peak = Math.max(peak, usdToCents(d.reported_balance_usd));
-    }
+    for (const d of daily) peak = Math.max(peak, usdToCents(/** @type {number} */ (d.reported_balance_usd)));
     peakReason = 'max(starting balance, Sheet Daily EOD balances)';
   }
 
   // Margin in use by open positions at the selected hold multiplier.
   let marginUsed = /** @type {number|null} */ (null);
   let marginReason = '';
-  if (ctx.open === null) marginReason = sheetWhy;
+  if (ctx.open === null) marginReason = ctx.openWhy;
   else if (ctx.open.length === 0) marginUsed = 0;
   else {
     const mult = holdMultiplier(ctx);
@@ -743,9 +828,10 @@ function computeMoney(ctx) {
  * @param {string} key
  * @param {string} label
  * @param {string} note
+ * @param {string|null} badge
  * @returns {MeterVM}
  */
-function meterVM(m, key, label, note) {
+function meterVM(m, key, label, note, badge) {
   const ratio = m.used_ratio;
   return {
     key,
@@ -757,6 +843,7 @@ function meterVM(m, key, label, note) {
     limit_text: fmtUsd(m.limit_cents),
     remaining_text: fmtUsd(m.remaining_cents),
     note: m.level === 'unknown' && m.reason ? `${note}${note ? ' · ' : ''}${m.reason}` : note,
+    badge,
   };
 }
 
@@ -767,18 +854,20 @@ function meterVM(m, key, label, note) {
  */
 function buildAccount(ctx, money) {
   const sheetBadge = ctx.trades !== null ? staleBadge(ctx.fr.sheet) : null;
-  const barsBadge = staleBadge(ctx.fr.bars);
+  const acctBadge = accountBadge(ctx);
   const realized = usdCell(money.realized, money.realized === null ? money.realizedReason : `closed trades, trade date ${ctx.td}`);
   realized.badge = sheetBadge;
-  const open = usdCell(money.open, money.open === null ? money.openReason : ctx.open && ctx.open.length > 0 ? 'marked at last 1h close' : 'flat');
-  if (money.open !== null && ctx.open && ctx.open.length > 0) open.badge = barsBadge ?? sheetBadge;
+  const open = usdCell(money.open, money.open === null ? money.openReason : ctx.open && ctx.open.length > 0 ? `marked at last 1h close, ${CONT_LABEL}` : 'flat');
+  if (money.open !== null && ctx.open && ctx.open.length > 0) open.badge = acctBadge;
   const equity = usdCell(money.equity, money.equity === null ? money.equityReason : 'start + closed + open');
   equity.sign = null;
-  equity.badge = sheetBadge;
+  equity.badge = acctBadge;
   const peak = usdCell(money.peak, money.peakReason);
   peak.sign = null;
+  peak.badge = sheetBadge;
   const marginUsed = usdCell(money.marginUsed, money.marginUsed === null ? money.marginReason : `${ctx.form.hold} hold, ${ctx.basis ?? '?'} basis`);
   marginUsed.sign = null;
+  marginUsed.badge = acctBadge;
 
   /** @type {Meter} */
   let loss;
@@ -790,8 +879,12 @@ function buildAccount(ctx, money) {
     if (loss.level === 'unknown' && money.open === null) loss = { ...loss, reason: `open P&L UNKNOWN (${money.openReason})` };
   }
   let dd = drawdownMeter(money.equity, money.peak, ctx.rs);
-  if (dd.level === 'unknown' && money.equity === null && ruleValue(ctx.rs, 'max_drawdown_usd').known) {
-    dd = { ...dd, reason: `equity UNKNOWN (${money.equityReason})` };
+  if (dd.level === 'unknown' && ruleValue(ctx.rs, 'max_drawdown_usd').known) {
+    /** @type {string[]} */
+    const why = [];
+    if (money.peak === null) why.push(money.peakReason);
+    if (money.equity === null) why.push(`equity UNKNOWN (${money.equityReason})`);
+    if (why.length > 0) dd = { ...dd, reason: why.join('; ') };
   }
   let mm = marginMeter(money.marginUsed, money.equity);
   if (mm.level === 'unknown') {
@@ -807,9 +900,9 @@ function buildAccount(ctx, money) {
     margin_used: marginUsed,
     trade_date: ctx.td,
     meters: [
-      meterVM(loss, 'daily_loss', 'Daily loss vs cap', 'loss = −(realized + open)'),
-      meterVM(dd, 'drawdown', 'Drawdown vs max', 'assumes EOD trailing: peak = max(start, EOD balances)'),
-      meterVM(mm, 'margin', 'Margin in use vs equity', `${ctx.form.hold} hold multiplier`),
+      meterVM(loss, 'daily_loss', 'Daily loss vs cap', 'assumes loss = −(realized today + open P&L since entry); confirm against RULES.md', acctBadge),
+      meterVM(dd, 'drawdown', 'Drawdown vs max', 'assumes EOD trailing: peak = max(start, EOD balances)', acctBadge),
+      meterVM(mm, 'margin', 'Margin in use vs equity', `${ctx.form.hold} hold multiplier`, acctBadge),
     ],
   };
 }
@@ -823,8 +916,8 @@ function buildPositions(ctx) {
   const maxRule = ruleValue(ctx.rs, 'max_contracts');
   const allowed = ruleValue(ctx.rs, 'allowed_roots');
   if (ctx.open === null) {
-    const why = ctx.fr.sheet.reason;
-    return { known: false, reason: `Positions UNKNOWN — ${why}`, rows: [], std_equiv: unknownCell(why) };
+    const why = ctx.trades === null ? ctx.fr.sheet.reason : ctx.openWhy;
+    return { known: false, reason: `Positions UNKNOWN — ${why}`, rows: [], std_equiv: unknownCell(why), badge: null };
   }
   /** @type {PositionRow[]} */
   const rows = ctx.open.map((t) => {
@@ -835,7 +928,7 @@ function buildPositions(ctx) {
     if (!spec) flags.push(`${t.root} not in contracts.json`);
     if (allowed.known && Array.isArray(allowed.value) && !allowed.value.includes(t.root)) flags.push(`${t.root} not in allowed_roots`);
     const pnl = usdCell(p.cents, p.cents === null ? p.reason : '');
-    if (p.cents !== null) pnl.badge = staleBadge(ctx.fr.bars);
+    if (p.cents !== null) pnl.badge = staleBadge(p.mark.fr);
     return {
       id: t.id,
       root: t.root,
@@ -860,7 +953,9 @@ function buildPositions(ctx) {
     const level = se > max ? 'breach' : max > 0 && se >= WARN_RATIO * max && se > 0 ? 'warn' : 'ok';
     std = cell({ text: `${fmtQty(se)} / ${fmtQty(max)}`, known: true, level, note: 'standard-equivalent contracts open vs max_contracts' });
   }
-  return { known: true, reason: rows.length === 0 ? 'Flat — no open positions in the Sheet' : '', rows, std_equiv: std };
+  const badge = inputsBadge(ctx, ['sheet']);
+  std.badge = badge;
+  return { known: true, reason: rows.length === 0 ? 'Flat — no open positions in the Sheet' : '', rows, std_equiv: std, badge };
 }
 
 /**
@@ -886,7 +981,7 @@ function atrCell(ctx, root) {
   return cell({
     text: `${ticks.toFixed(1)} ticks`,
     known: true,
-    badge: staleBadge(ctx.fr.bars),
+    badge: staleBadge(m.fr),
     note: `ATR(14) on 1h bars = ${fmtPrice(a, m.spec.tick_size / 100)} pts`,
   });
 }
@@ -927,6 +1022,8 @@ function buildSizer(ctx, money) {
     ? (money.equity === null ? `equity UNKNOWN (${money.equityReason})` : `margin in use UNKNOWN (${money.marginReason})`)
     : 'equity − margin in use');
   available.sign = null;
+  const badge = accountBadge(ctx);
+  available.badge = badge;
   /** @type {string[]} */
   const warnings = [];
   const allowed = ruleValue(ctx.rs, 'allowed_roots');
@@ -942,6 +1039,7 @@ function buildSizer(ctx, money) {
     multiplier_text: mult === null ? UNKNOWN_TEXT : `×${mult}`,
     atr: atrCell(ctx, f.root),
     warnings,
+    badge,
   };
   /** @type {string[]} */
   const inputProblems = [];
@@ -997,6 +1095,37 @@ function buildSizer(ctx, money) {
   };
 }
 
+const MONTH_CODES = 'FGHJKMNQUVXZ';
+
+/**
+ * Sort key of a contract code such as "ESZ26": [year*12 + month, code]. Codes that do not end in a month
+ * letter and a 1–2 digit year sort after all parsable ones, then by text.
+ * @param {string} code
+ * @returns {number}
+ */
+function contractOrdinal(code) {
+  const m = /([FGHJKMNQUVXZ])(\d{1,2})$/.exec(code);
+  if (!m || !m[1] || !m[2]) return Number.POSITIVE_INFINITY;
+  return Number(m[2]) * 12 + MONTH_CODES.indexOf(m[1]);
+}
+
+/**
+ * Total order for settlement rows: root ascending, then trade_date descending (latest first), then
+ * contract month ascending (front month first), then contract_code text. Returns 0 only on ties of all keys.
+ * @param {{root: string, contract_code: string, trade_date: string}} a
+ * @param {{root: string, contract_code: string, trade_date: string}} b
+ * @returns {number}
+ */
+export function compareSettleRows(a, b) {
+  if (a.root !== b.root) return a.root < b.root ? -1 : 1;
+  if (a.trade_date !== b.trade_date) return a.trade_date > b.trade_date ? -1 : 1;
+  const oa = contractOrdinal(a.contract_code);
+  const ob = contractOrdinal(b.contract_code);
+  if (oa !== ob) return oa < ob ? -1 : 1;
+  if (a.contract_code !== b.contract_code) return a.contract_code < b.contract_code ? -1 : 1;
+  return 0;
+}
+
 /**
  * @param {Ctx} ctx
  * @returns {MarketRow[]}
@@ -1009,7 +1138,7 @@ function buildMarkets(ctx) {
     const spec = m.spec;
     /** @type {Cell} */
     let settleCell;
-    const rows = settle.filter((r) => r.root === root).sort((a, b) => (a.trade_date < b.trade_date ? 1 : -1));
+    const rows = settle.filter((r) => r.root === root).sort(compareSettleRows);
     const s = rows[0];
     if (!DISPLAYABLE.has(sf.state)) settleCell = unknownCell(`settlements ${sf.state.toUpperCase()}`);
     else if (!s || !spec) settleCell = unknownCell(`no settlement for ${root}`);
@@ -1076,13 +1205,22 @@ function buildCalendar(ctx) {
 }
 
 /**
+ * Open rows among the valid Trades rows (a lower bound when some rows are invalid).
+ * @param {Ctx} ctx
+ * @returns {Trade[]}
+ */
+function openKnownRows(ctx) {
+  return ctx.open ?? (ctx.trades ?? []).filter((t) => t.exit === null);
+}
+
+/**
  * Open-position roots ∪ watched roots (watched order first).
  * @param {Ctx} ctx
  * @returns {string[]}
  */
 function unionRoots(ctx) {
   const out = [...ctx.settings.watched_roots];
-  for (const t of ctx.open ?? []) if (!out.includes(t.root)) out.push(t.root);
+  for (const t of openKnownRows(ctx)) if (!out.includes(t.root)) out.push(t.root);
   return out;
 }
 
@@ -1172,13 +1310,13 @@ function buildBanners(inp, ctx, account, positions) {
   const out = [];
 
   // Flatten.
+  // Unknown open positions are treated as open for the timing text, but the banner is never ok/flat.
   const positionsUnknown = ctx.open === null;
   const hasOpen = ctx.open !== null && ctx.open.length > 0;
   const fb = flattenBanner(ctx.now, ctx.rs, positionsUnknown ? true : hasOpen);
-  if (positionsUnknown && (fb.level === 'warn' || fb.level === 'breach')) {
-    out.push({ level: 'unknown', kind: 'flatten', title: 'Flatten', message: `${fb.message} — open positions UNKNOWN (Sheet unavailable)`, details: [] });
-  } else if (positionsUnknown && fb.level === 'ok') {
-    out.push({ level: 'ok', kind: 'flatten', title: 'Flatten', message: `${fb.message} — open positions UNKNOWN`, details: [] });
+  if (positionsUnknown) {
+    const why = ctx.trades === null ? 'open positions UNKNOWN (Sheet unavailable)' : ctx.openWhy;
+    out.push({ level: 'unknown', kind: 'flatten', title: 'Flatten', message: `${fb.message} — ${why}`, details: [] });
   } else {
     out.push({ level: fb.level, kind: 'flatten', title: fb.level === 'breach' ? 'FLATTEN NOW' : 'Flatten', message: fb.message, details: [] });
   }
@@ -1187,7 +1325,7 @@ function buildBanners(inp, ctx, account, positions) {
   const cal = DISPLAYABLE.has(ctx.fr.calendar.state) ? calendarOf(ctx.envs.calendar) : null;
   for (const root of unionRoots(ctx)) {
     const b = expiryBanner(root, nextExpiration(root, ctx.today, ctx.contracts, cal ? cal.expirations : []), ctx.today, ctx.settings.expiry_warn_days);
-    const isOpen = (ctx.open ?? []).some((t) => t.root === root);
+    const isOpen = openKnownRows(ctx).some((t) => t.root === root);
     if (b.level !== 'ok') {
       out.push({ level: b.level, kind: 'expiry', title: `Expiry ${root}${isOpen ? ' (open position)' : ''}`, message: b.message, details: [] });
     }
@@ -1227,6 +1365,16 @@ function buildBanners(inp, ctx, account, positions) {
   if (inp.rules === null) {
     out.push({ level: 'warn', kind: 'rules', title: 'Rules UNAVAILABLE', message: `rules.json failed to load (${inp.loadErrors?.rules ?? 'invalid'}) — every rule is UNKNOWN`, details: [] });
   } else {
+    const bad = inp.ruleErrors ?? [];
+    if (bad.length > 0) {
+      out.push({
+        level: 'warn',
+        kind: 'rules',
+        title: `rules.json: ${bad.length} invalid value${bad.length === 1 ? '' : 's'}`,
+        message: 'Wrongly typed values are treated as UNKNOWN, never coerced — fix docs/data/rules.json',
+        details: bad.slice(0, 8).concat(bad.length > 8 ? [`…and ${bad.length - 8} more`] : []),
+      });
+    }
     const unk = unknownRules(ctx.rs);
     if (unk.length > 0) {
       out.push({ level: 'warn', kind: 'rules', title: `${unk.length} rules UNKNOWN`, message: `${unk.length} rules UNKNOWN — fill plan/RULES.md → rules.json`, details: unk });
@@ -1237,11 +1385,13 @@ function buildBanners(inp, ctx, account, positions) {
   const rowErrors = inp.sheet?.rowErrors ?? [];
   if (rowErrors.length > 0) {
     const tradeBad = ctx.tradeRowErrors.length > 0;
+    const dailyBad = rowErrors.some((e) => e.startsWith(DAILY_ROW_PREFIX));
+    const affected = [tradeBad ? "today's P&L and open positions" : '', dailyBad ? 'the drawdown peak' : ''].filter(Boolean);
     out.push({
       level: 'warn',
       kind: 'sheet',
       title: `Sheet: ${rowErrors.length} invalid row${rowErrors.length === 1 ? '' : 's'}`,
-      message: tradeBad ? "Fix these rows — today's P&L is UNKNOWN until then" : 'Fix these rows in the Sheet',
+      message: affected.length > 0 ? `Fix these rows — ${affected.join(' and ')} ${affected.length > 1 || tradeBad ? 'are' : 'is'} UNKNOWN until then` : 'Fix these rows in the Sheet',
       details: rowErrors.slice(0, 8).concat(rowErrors.length > 8 ? [`…and ${rowErrors.length - 8} more`] : []),
     });
   }
