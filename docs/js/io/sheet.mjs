@@ -55,8 +55,9 @@ export async function loadSheet(url, key) {
     } catch {
       return { data: null, rowErrors: [], error: 'response is not JSON (check the web app is deployed for "Anyone")', fetchedAtMs: null };
     }
-    const n = normalizeSheet(raw);
-    return { ...n, fetchedAtMs: n.error === null ? Date.now() : null };
+    const loadedAt = Date.now();
+    const n = normalizeSheet(raw, loadedAt);
+    return { ...n, fetchedAtMs: n.error === null ? loadedAt : null };
   } catch (e) {
     const msg = e instanceof Error ? (e.name === 'AbortError' ? 'timed out' : e.message) : String(e);
     return { data: null, rowErrors: [], error: `network: ${msg}`, fetchedAtMs: null };
@@ -73,7 +74,14 @@ function isObj(v) {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-const NUM_RE = /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i;
+/** Unsigned decimal body (the sign and `$` are stripped first). */
+const NUM_RE = /^(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i;
+
+/** Largest accepted quantity per Trades row (a fat-finger guard; also keeps cent sums safe integers). */
+export const MAX_QTY = 10000;
+
+/** An exit_time later than the load time by more than this is rejected (clock-skew allowance). */
+export const FUTURE_SKEW_MS = 5 * 60 * 1000;
 
 /**
  * Cell → number. `''`/null/undefined → null (blank). Numeric strings (optional `$` and thousands commas)
@@ -87,8 +95,13 @@ export function coerceNumber(v) {
   if (typeof v !== 'string') return NaN;
   const s = v.trim();
   if (s === '') return null;
-  const neg = s.startsWith('-');
-  const body = s.replace(/^[-+]/, '').replace(/^\$/, '').replace(/,(?=\d{3}(\D|$))/g, '');
+  // At most one sign, before or after an optional `$` ("-$5", "$-5"); "--5" or "+-5" are junk, not a sign flip.
+  const m = /^([-+]?)(\$?)([-+]?)(.*)$/.exec(s);
+  if (!m) return NaN;
+  const [, pre = '', , post = '', rest = ''] = m;
+  if (pre !== '' && post !== '') return NaN;
+  const neg = (pre || post) === '-';
+  const body = rest.replace(/,(?=\d{3}(\D|$))/g, '');
   if (!NUM_RE.test(body)) return NaN;
   const n = Number(body);
   if (!Number.isFinite(n)) return NaN;
@@ -116,23 +129,35 @@ function isBlankRow(row) {
   return Object.values(row).every((v) => v === '' || v === null || v === undefined);
 }
 
+const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-](\d{2}):(\d{2}))$/;
+
 /**
+ * Epoch ms of an ISO-8601 time with Z or an explicit offset, or null. The calendar date must exist
+ * (round-trip check: V8 would roll 2026-02-30 over to March) and every field must be in range.
+ * An offset-less time is ambiguous and rejected (core rejects it too).
  * @param {string|null} t
- * @returns {boolean}
+ * @returns {number|null}
  */
-function isIsoTime(t) {
-  // Must carry Z or an explicit offset: an offset-less time is ambiguous (core rejects it too).
-  return t !== null
-    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(t)
-    && !Number.isNaN(Date.parse(t));
+function isoTimeMs(t) {
+  if (t === null) return null;
+  const m = ISO_RE.exec(t);
+  if (!m) return null;
+  const [y = 0, mo = 0, d = 0, h = 0, mi = 0, sec = 0, oh = 0, om = 0] = m.slice(1).map((x) => (x === undefined ? 0 : Number(x)));
+  if (mo < 1 || mo > 12 || d < 1) return null;
+  const day = new Date(Date.UTC(y, mo - 1, d));
+  if (day.getUTCFullYear() !== y || day.getUTCMonth() !== mo - 1 || day.getUTCDate() !== d) return null;
+  if (h > 23 || mi > 59 || sec > 59 || oh > 23 || om > 59) return null;
+  const ms = Date.parse(t);
+  return Number.isFinite(ms) ? ms : null;
 }
 
 /**
  * Normalise one Trades row. Returns the Trade or a reason string.
  * @param {Record<string, unknown>} r
+ * @param {number|null} nowMs  load time; when set, an exit_time more than FUTURE_SKEW_MS later is rejected
  * @returns {Trade|string}
  */
-function normTrade(r) {
+function normTrade(r, nowMs) {
   const root = cellText(r.root);
   const sideRaw = cellText(r.side);
   const side = sideRaw === null ? null : sideRaw.toLowerCase();
@@ -144,14 +169,18 @@ function normTrade(r) {
   const exitTime = cellText(r.exit_time);
   if (root === null || !/^[A-Za-z0-9]{1,4}$/.test(root)) return 'root missing or malformed';
   if (side !== 'long' && side !== 'short') return 'side must be long or short';
-  if (qty === null || Number.isNaN(qty) || !Number.isInteger(qty) || qty <= 0) return 'qty must be a positive whole number';
+  if (qty === null || !Number.isSafeInteger(qty) || qty <= 0 || qty > MAX_QTY) return `qty must be a whole number from 1 to ${MAX_QTY}`;
   if (entry === null || Number.isNaN(entry) || entry <= 0) return 'entry is not a price';
   if (Number.isNaN(exit) || (exit !== null && exit <= 0)) return 'exit is not a price';
   if (fees === null) return 'fees_usd is blank (enter 0 if none)';
   if (Number.isNaN(fees) || fees < 0) return 'fees_usd is not a non-negative number';
-  if (!isIsoTime(entryTime)) return 'entry_time is not ISO-8601';
-  if (exitTime !== null && !isIsoTime(exitTime)) return 'exit_time is not ISO-8601';
+  const entryMs = isoTimeMs(entryTime);
+  if (entryMs === null) return 'entry_time is not a valid ISO-8601 time with offset';
+  const exitMs = isoTimeMs(exitTime);
+  if (exitTime !== null && exitMs === null) return 'exit_time is not a valid ISO-8601 time with offset';
   if ((exit === null) !== (exitTime === null)) return 'exit and exit_time must both be blank (open) or both set';
+  if (exitMs !== null && exitMs < entryMs) return 'exit_time is before entry_time';
+  if (exitMs !== null && nowMs !== null && exitMs > nowMs + FUTURE_SKEW_MS) return 'exit_time is in the future';
   /** @type {Trade} */
   const t = {
     id: '',
@@ -174,9 +203,10 @@ function normTrade(r) {
  * non-coercible value makes that row invalid (listed in `rowErrors` with its id and excluded). It never
  * becomes 0. A `{error}` response → `error`.
  * @param {unknown} raw
+ * @param {number|null} [nowMs]  load time (epoch ms); enables the future exit_time check. Pure: never reads the clock.
  * @returns {{data: SheetData|null, rowErrors: string[], error: string|null}}
  */
-export function normalizeSheet(raw) {
+export function normalizeSheet(raw, nowMs = null) {
   if (!isObj(raw)) return { data: null, rowErrors: [], error: 'unexpected response (not an object)' };
   if (typeof raw.error === 'string') return { data: null, rowErrors: [], error: `Sheet: ${raw.error}` };
   if (raw.schema_version !== 1) return { data: null, rowErrors: [], error: 'unexpected schema_version from Sheet' };
@@ -208,7 +238,7 @@ export function normalizeSheet(raw) {
       return;
     }
     seen.add(id);
-    const t = normTrade(row);
+    const t = normTrade(row, nowMs);
     if (typeof t === 'string') {
       rowErrors.push(`${TRADES_ROW_PREFIX}${name}: ${t}`);
       return;
