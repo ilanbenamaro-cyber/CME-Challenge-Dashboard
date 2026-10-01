@@ -17,3 +17,5 @@
 - Daily-loss = −(realized today + open P&L since entry) over-counts for positions held overnight; the challenge's real
   definition (vs prior settle?) must come from RULES.md. Labelled as an assumption in the UI (G3 P1-7).
 - Flatten banner is anchored to the CME trade date: between 15:10 and 17:00 CT it breaches; at 17:00 it rolls to the next day.
+- CME website (www.cmegroup.com) blocks GitHub Actions IPs (Akamai 403) and its Data Terms of Use prohibit automated access.
+  Do not scrape it. Official rules PDFs must be downloaded by a human in a browser (ADR-007).

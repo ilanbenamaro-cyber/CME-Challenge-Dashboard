@@ -12,3 +12,9 @@
 - 2026-09-30 ADR-006: Drop `frame-ancestors` from the <meta> CSP. Browsers ignore it there (Chromium logs an error) and
   GitHub Pages cannot set response headers, so the site has no clickjacking protection. Accepted: the page is read-only
   (no actions to hijack); the Sheet key lives only in localStorage of the owner's browser.
+- 2026-10-01 ADR-007: CME website scraping disabled. Recon from GitHub Actions (branch recon/cme-phase0, run 2026-10-01T00:23Z):
+  every www.cmegroup.com URL incl. robots.txt, both rules PDFs, the settlements JSON endpoint and the margins pages → HTTP 403
+  from AkamaiGHost, body: "This IP address is blocked due to suspected web scraping activity … Use of scripts, software, spiders,
+  robots … is strictly prohibited by CME Group's website Data Terms of Use." All CME website sources in jobs/config/sources.json
+  are now null (jobs fail closed). Margins → Sheet `Margins` tab; daily results → Sheet `Daily` tab. Settlements: none until a
+  licensed feed is added (candidate: Databento GLBX.MDP3 `statistics` schema). Never re-enable website scraping.
