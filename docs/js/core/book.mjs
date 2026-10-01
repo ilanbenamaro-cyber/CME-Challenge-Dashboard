@@ -127,3 +127,26 @@ export function reconcile(computed, reported, limit) {
     };
   });
 }
+
+/**
+ * Contracts traded on CME trade date `date` (ADR-008): for every trade, its qty counts once if the entry falls on
+ * that trade date and once more if the exit does (an entry or an exit each count toward the daily minimum).
+ * Returns null if any entry_time / exit_time cannot be parsed (the count would be unreliable).
+ * @param {Trade[]} trades
+ * @param {string} date "YYYY-MM-DD"
+ * @returns {number|null}
+ */
+export function contractsTradedOn(trades, date) {
+  let n = 0;
+  for (const t of trades) {
+    const entryMs = parseInstant(t.entry_time);
+    if (entryMs === null) return null;
+    if (tradeDate(entryMs) === date) n += t.qty;
+    if (t.exit_time !== null && t.exit_time !== undefined && t.exit_time !== '') {
+      const exitMs = parseInstant(t.exit_time);
+      if (exitMs === null) return null;
+      if (tradeDate(exitMs) === date) n += t.qty;
+    }
+  }
+  return n;
+}

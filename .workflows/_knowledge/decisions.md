@@ -18,3 +18,10 @@
   robots … is strictly prohibited by CME Group's website Data Terms of Use." All CME website sources in jobs/config/sources.json
   are now null (jobs fail closed). Margins → Sheet `Margins` tab; daily results → Sheet `Daily` tab. Settlements: none until a
   licensed feed is added (candidate: Databento GLBX.MDP3 `statistics` schema). Never re-enable website scraping.
+- 2026-10-01 ADR-008: Real rules = 2026 CME Group University Trading Challenge (plan/RULES.md). Interface changes:
+  Rule gains `applies:false` ("not a rule in this challenge": shown as n/a, never UNKNOWN, never 0); RuleSet gains optional
+  daily_loss_cap_pct, flatten_dates, min_contracts_per_day, commission_per_side_usd. Core: ruleValue returns `na`;
+  sizer drops a not-applicable max_contracts limit; dailyLossMeter takes a cap override + pctCapCents (floor);
+  minContractsMeter; book.contractsTradedOn; flattenBanner honours flatten_dates. Interpretations chosen by Ilan:
+  20% cap base = prior trade date's closing balance (Daily tab; $1,000,000 before the first close), margin basis = initial.
+  Golden: tests/golden/utc2026.json.

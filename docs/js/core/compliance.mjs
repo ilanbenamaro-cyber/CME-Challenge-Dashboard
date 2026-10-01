@@ -51,14 +51,21 @@ function lossMeter(used, limit, unknownReason, label) {
 
 /**
  * Daily loss meter. loss = max(0, -(realized + open)). breach if loss >= cap; warn if
- * loss >= WARN_RATIO * cap; else ok. unknown if the cap rule is unknown or openCents is null.
+ * loss >= WARN_RATIO * cap; else ok. unknown if the cap is unknown or openCents is null.
+ * Cap: rule daily_loss_cap_usd when known; otherwise `capCentsOverride` (e.g. from pctCapCents, ADR-008).
  * @param {number} realizedCents
  * @param {number|null} openCents  0 when flat; null when open P&L cannot be marked
  * @param {RuleSet|null} rules
+ * @param {number|null} [capCentsOverride]
  * @returns {Meter}
  */
-export function dailyLossMeter(realizedCents, openCents, rules) {
-  const cap = limitFromRule(rules, 'daily_loss_cap_usd');
+export function dailyLossMeter(realizedCents, openCents, rules, capCentsOverride) {
+  let cap = limitFromRule(rules, 'daily_loss_cap_usd');
+  if (cap.cents === null && capCentsOverride !== undefined) {
+    cap = isNum(capCentsOverride) && capCentsOverride > 0
+      ? { cents: capCentsOverride, reason: '' }
+      : { cents: null, reason: 'percentage cap base unknown' };
+  }
   /** @type {string[]} */
   const why = [];
   /** @type {number|null} */
@@ -122,4 +129,45 @@ export function marginMeter(usedCents, availableCents) {
     reason = `margin at or above ${Math.round(WARN_RATIO * 100)}% of available`;
   }
   return { level, used_ratio: ratio, used_cents: used, limit_cents: avail, remaining_cents: remaining, reason };
+}
+
+/**
+ * Percentage daily-loss cap in cents (ADR-008): floor(baseCents * daily_loss_cap_pct).
+ * Floor keeps the cap conservative (never larger than the exact value).
+ * Returns null if the rule is unknown/not applicable, not in (0, 1], or the base is not a positive number.
+ * @param {RuleSet|null} rules
+ * @param {number|null} baseCents  prior trade date's closing balance
+ * @returns {number|null}
+ */
+export function pctCapCents(rules, baseCents) {
+  const r = ruleValue(rules, 'daily_loss_cap_pct');
+  if (!r.known) return null;
+  const pct = r.value;
+  if (!isNum(pct) || pct <= 0 || pct > 1) return null;
+  if (!isNum(baseCents) || baseCents <= 0) return null;
+  return Math.floor(baseCents * pct + 1e-9);
+}
+
+/**
+ * Minimum-contracts-per-day meter (ADR-008). Not a loss meter: more volume is better.
+ * ok if traded >= required; warn if below (penalty applies at end of trade date); unknown if traded is null
+ * or the rule is unknown; na when the rule has applies:false.
+ * @param {number|null} traded   contracts traded (entries + exits) on the trade date
+ * @param {RuleSet|null} rules
+ * @returns {{level: import('./types.mjs').Level | 'na', traded: number|null, required: number|null, remaining: number|null, reason: string}}
+ */
+export function minContractsMeter(traded, rules) {
+  const r = ruleValue(rules, 'min_contracts_per_day');
+  if (!r.known) {
+    return { level: r.na ? 'na' : 'unknown', traded, required: null, remaining: null, reason: r.reason };
+  }
+  const required = r.value;
+  if (!isNum(traded)) {
+    return { level: 'unknown', traded: null, required, remaining: null, reason: 'contracts traded today unknown' };
+  }
+  const remaining = Math.max(0, required - traded);
+  if (traded >= required) {
+    return { level: 'ok', traded, required, remaining: 0, reason: `daily minimum of ${required} met` };
+  }
+  return { level: 'warn', traded, required, remaining, reason: `${remaining} more contract(s) needed today to meet the daily minimum of ${required}` };
 }
