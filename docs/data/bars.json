@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "dataset": "bars",
-  "generated_at": "2026-10-01T02:13:01Z",
+  "generated_at": "2026-10-01T02:17:04Z",
   "data_as_of": "2026-09-30T18:00:00Z",
   "source": "Databento GLBX.MDP3 ohlcv-1h (stype_in=continuous, <ROOT>.c.0); delayed: Databento license covers data up to 2026-09-30T18:00Z (no live CME license)",
   "status": "ok",
@@ -1907,6 +1907,6 @@
       "MCL": "CL",
       "MGC": "GC"
     },
-    "cost_usd": 0.070633
+    "cost_usd": 0.066194
   }
 }
