@@ -1,11 +1,16 @@
 {
   "schema_version": 1,
   "dataset": "bars",
-  "generated_at": "2026-10-01T05:42:32Z",
+  "generated_at": "2026-10-01T13:03:38Z",
   "data_as_of": "2026-09-30T21:00:00Z",
-  "source": "Databento GLBX.MDP3 ohlcv-1h (stype_in=continuous, <ROOT>.c.0); delayed: Databento license covers data up to 2026-09-30T21:00Z (no live CME license)",
-  "status": "ok",
-  "errors": [],
+  "source": "Databento GLBX.MDP3 ohlcv-1h (stype_in=continuous, <ROOT>.c.0)",
+  "status": "error",
+  "errors": [
+    "ES: cost check failed: BentoClientError: 422 data_end_after_available_end The dataset GLBX.MDP3 has data available up to '2026-10-01 12:00:00+00:00'. The `end` in the query ('2026-10-01 13:00:00+00:00') is after the available range. Try requesting with an earlier `end`. documentation: https://databento.com/docs/api-refer…",
+    "NQ: cost check failed: BentoClientError: 422 data_end_after_available_end The dataset GLBX.MDP3 has data available up to '2026-10-01 12:00:00+00:00'. The `end` in the query ('2026-10-01 13:00:00+00:00') is after the available range. Try requesting with an earlier `end`. documentation: https://databento.com/docs/api-refer…",
+    "CL: cost check failed: BentoClientError: 422 data_end_after_available_end The dataset GLBX.MDP3 has data available up to '2026-10-01 12:00:00+00:00'. The `end` in the query ('2026-10-01 13:00:00+00:00') is after the available range. Try requesting with an earlier `end`. documentation: https://databento.com/docs/api-refer…",
+    "GC: cost check failed: BentoClientError: 422 data_end_after_available_end The dataset GLBX.MDP3 has data available up to '2026-10-01 12:00:00+00:00'. The `end` in the query ('2026-10-01 13:00:00+00:00') is after the available range. Try requesting with an earlier `end`. documentation: https://databento.com/docs/api-refer…"
+  ],
   "data": {
     "roots": {
       "ES": {
