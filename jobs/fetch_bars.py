@@ -196,8 +196,9 @@ def run(
     errors: list[str] = []
 
     # 1) Project the cost of every request before spending anything.
-    planned: list[tuple[str, dict]] = []
-    total = 0.0
+    planned: list[tuple[str, dict, float]] = []
+    total = 0.0  # projected (cap check): includes quotes for requests Databento may refuse and never bill
+    billed = 0.0  # quotes of the requests that actually returned data (reported as cost_usd)
     unchanged: list[str] = []
     for root in roots:
         root_start = incremental_start(previous_bars(previous, root), start)
@@ -215,7 +216,7 @@ def run(
             errors.append(f"{root}: cost check returned an invalid value")
             continue
         total += cost
-        planned.append((root, params))
+        planned.append((root, params, cost))
     if total > COST_CAP_USD:
         return fail(errors + [f"cost cap: projected ${total:.4f} > ${COST_CAP_USD:.2f}; nothing requested"])
     if not planned and not unchanged:
@@ -241,7 +242,7 @@ def run(
     for root in unchanged:
         keep_previous(root)
 
-    def delayed_params(root: str) -> dict:
+    def delayed_params(root: str) -> tuple[dict, float]:
         """Params for the licensed (delayed) window, cost-checked against the cap before any spend (A10)."""
         nonlocal total
         assert delayed_to is not None
@@ -254,13 +255,13 @@ def run(
         if cost is None or cost < 0 or total + cost > COST_CAP_USD:
             raise RuntimeError("cost check for the licensed window failed or exceeds the cost cap")
         total += cost
-        return p
+        return p, cost
 
-    for root, params in planned:
+    for root, params, quote in planned:
         symbol = symbol_for(root)
         try:
             if delayed_to is not None:
-                params = delayed_params(root)
+                params, quote = delayed_params(root)
             try:
                 store = client.timeseries.get_range(**params)
             except Exception as exc:  # noqa: BLE001
@@ -270,8 +271,9 @@ def run(
                 # License only covers data up to lic_end (no live CME license): re-check the cost of that window,
                 # keep the cap, retry once. The bars are then delayed and the site marks them STALE by their age.
                 delayed_to = lic_end
-                params = delayed_params(root)
+                params, quote = delayed_params(root)
                 store = client.timeseries.get_range(**params)
+            billed += quote
             df = store.to_df()
             bars, dropped = frame_to_bars(df, symbol)
         except _NothingNew:
@@ -302,7 +304,7 @@ def run(
     data = {
         "roots": result_roots,
         "aliases": config.aliases(contracts),
-        "cost_usd": round(total, 6),
+        "cost_usd": round(billed, 6),
     }
     data_as_of = min(latest + timedelta(hours=1), now)
     if delayed_to is not None:

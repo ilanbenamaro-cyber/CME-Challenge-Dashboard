@@ -275,6 +275,9 @@ def test_unlicensed_live_range_falls_back_to_delayed_window(tmp_path):
     for i, (name, p) in enumerate(rec.calls):
         if name == "get_range" and p["end"] == "2026-09-30T18:00:00Z":
             assert ("get_cost", p) in rec.calls[:i]
+    # cost_usd reports only billed requests: 4 licensed-window quotes at the Recorder's $0.001 each, not the
+    # refused live-window quotes (Databento does not bill a refused request).
+    assert env["data"]["cost_usd"] == pytest.approx(0.004)
     # Only the first root hits the 422; the rest go straight to the delayed window.
     refused = [p for n, p in rec.calls if n == "get_range" and p["end"] == "2026-10-01T02:00:00Z"]
     assert len(refused) == 1
