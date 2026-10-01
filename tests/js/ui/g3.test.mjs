@@ -2,7 +2,7 @@
 // the fixed behaviour. Inputs follow the probe scripts in /tmp/g3/.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildViewModel } from '../../../docs/js/ui/viewmodel.mjs';
+import { buildViewModel, compareSettleRows } from '../../../docs/js/ui/viewmodel.mjs';
 import { renderApp } from '../../../docs/js/ui/render.mjs';
 import { NOW, MIN, env, esBars, sheetRaw, sheetResult, inputs, noSectionErrors } from './fixtures.mjs';
 
@@ -208,6 +208,31 @@ test('P1-7: the daily-loss meter states its assumed definition', () => {
   const text = 'assumes loss = −(realized today + open P&L since entry); confirm against RULES.md';
   assert.ok(loss?.note.includes(text), loss?.note);
   assert.ok(renderApp(vm).includes('assumes loss = −(realized today + open P&amp;L since entry); confirm against RULES.md'));
+});
+
+test('P2-1: settlement comparator is a total order (root, trade_date desc, front contract first)', () => {
+  const rows = [
+    { root: 'ES', contract_code: 'ESH27', settle: 5850, trade_date: '2026-09-29' },
+    { root: 'ES', contract_code: 'ESZ26', settle: 5799.5, trade_date: '2026-09-29' },
+    { root: 'ES', contract_code: 'ESZ26', settle: 5790, trade_date: '2026-09-28' },
+    { root: 'NQ', contract_code: 'NQZ26', settle: 20000, trade_date: '2026-09-29' },
+    { root: 'ES', contract_code: 'ESZ27', settle: 5900, trade_date: '2026-09-29' },
+  ];
+  for (const a of rows) {
+    assert.equal(compareSettleRows(a, a), 0);
+    assert.equal(compareSettleRows(a, { ...a }), 0);
+    for (const b of rows) assert.equal(Math.sign(compareSettleRows(a, b)), 0 - Math.sign(compareSettleRows(b, a)));
+  }
+  const sorted = [...rows].sort(compareSettleRows).map((r) => `${r.contract_code}@${r.trade_date}`);
+  assert.deepEqual(sorted, ['ESZ26@2026-09-29', 'ESH27@2026-09-29', 'ESZ27@2026-09-29', 'ESZ26@2026-09-28', 'NQZ26@2026-09-29']);
+  // The Markets "Settle" cell shows the front contract whatever the input order.
+  for (const order of [rows.slice(0, 2), rows.slice(0, 2).reverse()]) {
+    const base = inputs();
+    const vm = buildViewModel({ ...base, envs: { ...base.envs, settlements: env('settlements', { rows: order }, NOW - 20 * 60 * MIN) } });
+    const es = vm.markets?.find((m) => m.root === 'ES');
+    assert.equal(es?.settle.text, '5799.50');
+    assert.match(es?.settle.note ?? '', /^ESZ26/);
+  }
 });
 
 test('P0-2: complete Daily data still gives a known peak', () => {

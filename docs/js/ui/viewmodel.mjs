@@ -1094,6 +1094,37 @@ function buildSizer(ctx, money) {
   };
 }
 
+const MONTH_CODES = 'FGHJKMNQUVXZ';
+
+/**
+ * Sort key of a contract code such as "ESZ26": [year*12 + month, code]. Codes that do not end in a month
+ * letter and a 1–2 digit year sort after all parsable ones, then by text.
+ * @param {string} code
+ * @returns {number}
+ */
+function contractOrdinal(code) {
+  const m = /([FGHJKMNQUVXZ])(\d{1,2})$/.exec(code);
+  if (!m || !m[1] || !m[2]) return Number.POSITIVE_INFINITY;
+  return Number(m[2]) * 12 + MONTH_CODES.indexOf(m[1]);
+}
+
+/**
+ * Total order for settlement rows: root ascending, then trade_date descending (latest first), then
+ * contract month ascending (front month first), then contract_code text. Returns 0 only on ties of all keys.
+ * @param {{root: string, contract_code: string, trade_date: string}} a
+ * @param {{root: string, contract_code: string, trade_date: string}} b
+ * @returns {number}
+ */
+export function compareSettleRows(a, b) {
+  if (a.root !== b.root) return a.root < b.root ? -1 : 1;
+  if (a.trade_date !== b.trade_date) return a.trade_date > b.trade_date ? -1 : 1;
+  const oa = contractOrdinal(a.contract_code);
+  const ob = contractOrdinal(b.contract_code);
+  if (oa !== ob) return oa < ob ? -1 : 1;
+  if (a.contract_code !== b.contract_code) return a.contract_code < b.contract_code ? -1 : 1;
+  return 0;
+}
+
 /**
  * @param {Ctx} ctx
  * @returns {MarketRow[]}
@@ -1106,7 +1137,7 @@ function buildMarkets(ctx) {
     const spec = m.spec;
     /** @type {Cell} */
     let settleCell;
-    const rows = settle.filter((r) => r.root === root).sort((a, b) => (a.trade_date < b.trade_date ? 1 : -1));
+    const rows = settle.filter((r) => r.root === root).sort(compareSettleRows);
     const s = rows[0];
     if (!DISPLAYABLE.has(sf.state)) settleCell = unknownCell(`settlements ${sf.state.toUpperCase()}`);
     else if (!s || !spec) settleCell = unknownCell(`no settlement for ${root}`);
