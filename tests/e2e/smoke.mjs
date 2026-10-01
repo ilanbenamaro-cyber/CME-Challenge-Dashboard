@@ -213,8 +213,9 @@ async function scenario(browser, sc) {
     check(/No flatten required today \(final-day flatten by 15:45 CT on 2026-10-30\)/.test(banners), `${tag} flatten is the calm info line`);
     check(await page.locator('.banners .banner-flatten').count() === 0, `${tag} no flatten banner box on a non-flatten day`);
     const acct = await page.locator('#p-account').innerText();
-    // Daily 2026-09-29 balance $50,070.50 x 20% = $10,014.10.
-    check(/Daily loss vs 20% lock/.test(acct) && acct.includes('$10,014.10'), `${tag} daily loss vs 20% of the prior close ($10,014.10)`);
+    // Fixture dates are in the practice period (before the first trade date 2026-10-05), so the Daily 2026-09-29
+    // row is ignored (RULES p6: balances reset) and the base is the $1,000,000 starting balance x 20% = $200,000.00.
+    check(/Daily loss vs 20% lock/.test(acct) && acct.includes('$200,000.00') && /starting balance/.test(acct), `${tag} daily loss vs 20% of the starting balance ($200,000.00)`);
     check(acct.includes('No drawdown rule in this challenge'), `${tag} drawdown shown as not a rule`);
     // C1 entry + exit (1 + 1) and O1 entry (2) on 2026-09-30 = 4.
     const ct = await page.locator('[data-meter="min_contracts"]').innerText();

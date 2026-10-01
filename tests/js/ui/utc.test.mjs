@@ -155,6 +155,18 @@ test('UTC: no Daily rows yet -> cap on the starting balance, labelled', () => {
   assert.match(m.note, /^20% of \$1,000,000\.00 \(starting balance; no Daily close yet\) = cap \$200,000\.00/);
 });
 
+test('UTC: practice-period Daily rows before the first trade date are ignored (balances reset)', () => {
+  // RULES p6: "All account balances will reset before the live competition begins." A practice close of
+  // $1,050,000 on Fri 2026-10-02 must not become the base on Mon 2026-10-05: base = $1,000,000, cap = $200,000.00.
+  const practice = [{ date: '2026-10-02', reported_pnl_usd: 50000, reported_balance_usd: 1050000 }];
+  const m = meter(utcAt(Date.parse('2026-10-05T15:00:00Z'), [], practice), 'daily_loss');
+  assert.equal(m.limit_text, '$200,000.00');
+  assert.match(m.note, /starting balance/);
+  // From Tue 2026-10-06 the Mon 10-05 close ($990,000) is the base: 0.2 x 990,000 = $198,000.00.
+  const live = [...practice, { date: '2026-10-05', reported_pnl_usd: -10000, reported_balance_usd: 990000 }];
+  assert.equal(meter(utcAt(Date.parse('2026-10-06T15:00:00Z'), [], live), 'daily_loss').limit_text, '$198,000.00');
+});
+
 test('UTC: a missing prior close, a rejected Daily row or no Sheet make the cap UNKNOWN', () => {
   // Wed 10-07 with only a 10-05 close: the 10-06 close (previous weekday) is missing.
   const missing = utcAt(WED_1007, [ES_LOSER_1007], [{ date: '2026-10-05', reported_pnl_usd: 500, reported_balance_usd: 1000500 }]);

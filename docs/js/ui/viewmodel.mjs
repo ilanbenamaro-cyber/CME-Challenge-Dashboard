@@ -934,8 +934,8 @@ function inChallengeWindow(ctx) {
 
 /**
  * Base of the percentage daily-loss cap (ADR-008): the prior trade date's closing balance from the Sheet Daily tab
- * (latest row dated before today's trade date with a reported balance). No Daily row before today -> the starting
- * balance. UNKNOWN when the Sheet is not loaded, a Daily row was rejected, or the prior close is missing.
+ * (latest row dated before today's trade date, and on/after the first trade date, with a reported balance).
+ * No such row -> the starting balance (balances reset before the live competition). UNKNOWN when the Sheet is not loaded, a Daily row was rejected, or the prior close is missing.
  * @param {Ctx} ctx
  * @returns {{cents: number|null, text: string, reason: string}}
  */
@@ -944,8 +944,10 @@ function priorCloseBase(ctx) {
   if (data === null) return { cents: null, text: '', reason: sheetWhy(ctx) };
   const dailyBad = (ctx.sheet?.rowErrors ?? []).filter((e) => e.startsWith(DAILY_ROW_PREFIX)).length;
   if (dailyBad > 0) return { cents: null, text: '', reason: `${dailyBad} invalid Daily row${dailyBad === 1 ? '' : 's'} in the Sheet` };
+  // RULES p6: balances reset before the live competition, so practice-period rows never set the base.
+  const firstTd = firstTradeDate(ctx.rs);
   const prior = data.daily
-    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d.date) && d.date < ctx.td)
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d.date) && d.date < ctx.td && (firstTd === null || d.date >= firstTd))
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   if (prior.length === 0) {
     const sb = ruleValue(ctx.rs, 'starting_balance_usd');
