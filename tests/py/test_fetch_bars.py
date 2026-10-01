@@ -339,3 +339,107 @@ def test_no_new_bars_keeps_published_bars_without_error(tmp_path):
     second = _run(t0 + timedelta(hours=1), tmp_path, rec)
     assert second["status"] == "ok", second["errors"]
     assert second["data"]["roots"]["ES"]["bars"] == first["data"]["roots"]["ES"]["bars"]
+
+
+class AvailRecorder(Recorder):
+    """Dataset published only up to `avail`: quotes or ranges ending later fail with the real 422 text
+    (data_end_after_available_end), as seen on Actions on 2026-10-01. Optionally exposes get_dataset_range."""
+
+    def __init__(self, avail, expose_range=False):
+        super().__init__()
+        rec, m_inner, t_inner = self, self.metadata, self.timeseries
+        msg = ("BentoClientError: 422 data_end_after_available_end The dataset GLBX.MDP3 has data available up to "
+               f"'{avail:%Y-%m-%d %H:%M:%S}+00:00'. The `end` in the query is after the available range.")
+
+        def late(p):
+            return datetime.fromisoformat(p["end"].replace("Z", "+00:00")) > avail
+
+        class M:
+            def get_cost(self, **p):
+                if late(p):
+                    rec.calls.append(("get_cost", p))
+                    raise RuntimeError(msg)
+                return m_inner.get_cost(**p)
+
+            if expose_range:
+                def get_dataset_range(self, dataset):
+                    rec.calls.append(("get_dataset_range", {"dataset": dataset}))
+                    return {"start": "2010-06-06T00:00:00.000000000Z", "end": f"{avail:%Y-%m-%dT%H:%M:%S}.000000000Z"}
+
+        class T:
+            def get_range(self, **p):
+                if late(p):
+                    rec.calls.append(("get_range", p))
+                    raise RuntimeError(msg)
+                return t_inner.get_range(**p)
+
+        self.metadata, self.timeseries = M(), T()
+
+
+def _assert_cost_before_every_range(calls):
+    for i, (n, p) in enumerate(calls):
+        if n == "get_range":
+            assert ("get_cost", p) in calls[:i], p
+
+
+def test_dataset_range_clamps_window_before_any_quote(tmp_path):
+    now = datetime(2026, 10, 1, 13, 7, tzinfo=timezone.utc)
+    avail = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+    rec = AvailRecorder(avail, expose_range=True)
+    env = _run(now, tmp_path, rec)
+    assert env["status"] == "ok", env["errors"]
+    ends = {p["end"] for n, p in rec.calls if n in ("get_cost", "get_range")}
+    assert ends == {"2026-10-01T12:00:00Z"}          # nothing ever asked past the entitled end
+    assert "delayed" in env["source"] and "2026-10-01T12:00Z" in env["source"]
+    _assert_cost_before_every_range(rec.calls)
+
+
+def test_cost_check_422_available_end_clamps_and_requotes(tmp_path):
+    # No get_dataset_range (older client / call failed): the quote itself is refused, as in the user's report.
+    now = datetime(2026, 10, 1, 13, 7, tzinfo=timezone.utc)
+    rec = AvailRecorder(datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc))
+    env = _run(now, tmp_path, rec)
+    assert env["status"] == "ok", env["errors"]
+    assert set(env["data"]["roots"]) == {"ES", "NQ", "CL", "GC"}
+    assert all(p["end"] == "2026-10-01T12:00:00Z" for n, p in rec.calls if n == "get_range")
+    _assert_cost_before_every_range(rec.calls)
+
+
+def test_available_end_parser_handles_both_422_texts():
+    a = RuntimeError("422 data_end_after_available_end The dataset GLBX.MDP3 has data available up to '2026-10-01 12:00:00+00:00'.")
+    b = RuntimeError("422 dataset_unavailable_range ... Try again with an end time before 2026-09-30T18:07:10.238315000Z.")
+    assert fetch_bars.licensed_end(a) == datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+    assert fetch_bars.licensed_end(b) == datetime(2026, 9, 30, 18, 0, tzinfo=timezone.utc)
+    assert fetch_bars.licensed_end(RuntimeError("422 symbology_invalid_request")) is None
+
+
+def test_server_error_on_range_is_retried_once(tmp_path):
+    """Seen on Actions 2026-10-01: NQ get_range -> 'BentoServerError: 504 The remote gateway timed out.'"""
+    now = datetime(2026, 10, 6, 15, 7, tzinfo=timezone.utc)
+    rec = Recorder()
+    inner = rec.timeseries
+    state = {"failed": False}
+
+    class T:
+        def get_range(self, **p):
+            if p["symbols"] == ["NQ.c.0"] and not state["failed"]:
+                state["failed"] = True
+                rec.calls.append(("get_range", p))
+                raise RuntimeError("BentoServerError: 504 The remote gateway timed out.")
+            return inner.get_range(**p)
+
+    rec.timeseries = T()
+    slept = []
+    env = fetch_bars.run(now, tmp_path / "bars.json", client_factory=lambda key: rec, env=ENV, sleep=slept.append)
+    assert env["status"] == "ok", env["errors"]
+    assert slept == [fetch_bars.RETRY_SLEEP_S]
+    nq = [p for n, p in rec.calls if n == "get_range" and p["symbols"] == ["NQ.c.0"]]
+    assert len(nq) == 2 and nq[0] == nq[1]                       # same, already cost-checked params
+
+
+def test_server_error_twice_is_reported_not_looped(tmp_path):
+    now = datetime(2026, 10, 6, 15, 7, tzinfo=timezone.utc)
+    rec = Recorder(range_exc={"NQ": RuntimeError("BentoServerError: 504 The remote gateway timed out.")})
+    env = fetch_bars.run(now, tmp_path / "bars.json", client_factory=lambda key: rec, env=ENV, sleep=lambda s: None)
+    assert env["status"] == "partial"
+    assert sum(1 for n, p in rec.calls if n == "get_range" and p["symbols"] == ["NQ.c.0"]) == 2
