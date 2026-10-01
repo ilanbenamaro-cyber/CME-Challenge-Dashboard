@@ -13,7 +13,8 @@ function isNum(x) {
  * Contracts that fit all of:
  *  - risk:   floor(risk_budget_cents / per_contract_risk_cents)
  *  - margin: floor(available_margin_cents / (margin_per_contract_cents * hold multiplier)), computed in cents
- *  - max_contracts: rules.max_contracts, converted for micros: floor(max_contracts * micro_to_standard_ratio)
+ *  - max_contracts: rules.max_contracts, converted for micros: floor(max_contracts * micro_to_standard_ratio);
+ *    when the rule has applies:false (ADR-008) this limit is absent: limits.max_contracts null and not blocking
  * status 'unknown' (contracts null) if any needed input or rule is null/unknown;
  * 'zero' if all known and the minimum is 0; else 'ok'.
  * Throws RangeError for stop_ticks not a positive integer, negative risk budget or fee.
@@ -71,7 +72,11 @@ export function sizePosition(input) {
   /** @type {number|null} */
   let maxLimit = null;
   const max = ruleValue(rules, 'max_contracts');
-  if (!max.known) {
+  // ADR-008: no max-contracts rule in this challenge -> the limit does not exist (never unknown, never 0).
+  const maxNA = !max.known && max.na;
+  if (maxNA) {
+    // not a constraint
+  } else if (!max.known) {
     reasons.push(`max contracts: ${max.reason}`);
   } else if (spec.parent === null) {
     maxLimit = Math.floor(max.value);
@@ -83,13 +88,14 @@ export function sizePosition(input) {
 
   const limits = { risk: riskLimit, margin: marginLimit, max_contracts: maxLimit };
 
-  if (marginLimit === null || maxLimit === null) {
+  if (marginLimit === null || (maxLimit === null && !maxNA)) {
     return { status: 'unknown', contracts: null, binding: null, per_contract_risk_cents: perContractRisk, limits, reasons };
   }
 
   // Ties resolve risk > margin > max_contracts.
   /** @type {['risk'|'margin'|'max_contracts', number][]} */
-  const ordered = [['risk', riskLimit], ['margin', marginLimit], ['max_contracts', maxLimit]];
+  const ordered = [['risk', riskLimit], ['margin', marginLimit]];
+  if (maxLimit !== null) ordered.push(['max_contracts', maxLimit]);
   let [binding, contracts] = ordered[0] ?? ['risk', riskLimit];
   for (const [name, value] of ordered) {
     if (value < contracts) {

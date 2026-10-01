@@ -1,18 +1,86 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-30",
+  "updated_at": "2026-10-01",
   "source_doc": "plan/RULES.md",
   "rules": {
-    "starting_balance_usd":    {"value": null, "source": null, "note": "Fill from plan/RULES.md"},
-    "daily_loss_cap_usd":      {"value": null, "source": null, "note": "Fill from plan/RULES.md"},
-    "max_drawdown_usd":        {"value": null, "source": null, "note": "Fill from plan/RULES.md"},
-    "max_contracts":           {"value": null, "source": null, "note": "Standard-contract equivalent"},
-    "micro_to_standard_ratio": {"value": null, "source": null, "note": "e.g. 10 if 10 micros count as 1 standard"},
-    "flatten_time_ct":         {"value": null, "source": null, "note": "HH:MM America/Chicago"},
-    "hold_margin_multipliers": {"value": null, "source": null, "note": "{intraday, overnight, weekend}"},
-    "margin_basis":            {"value": null, "source": null, "note": "initial | maintenance"},
-    "allowed_roots":           {"value": null, "source": null},
-    "challenge_start_date":    {"value": null, "source": null},
-    "challenge_end_date":      {"value": null, "source": null}
+    "starting_balance_usd": {
+      "value": 1000000,
+      "source": "2026 CME Group University Trading Challenge — Competition Rules, Regulations and Requirements (plan/RULES.md), p9 General Rules for Trading: \"Beginning account balances: - $1,000,000\""
+    },
+    "daily_loss_cap_usd": {
+      "value": null,
+      "source": null,
+      "note": "No fixed-dollar cap; see daily_loss_cap_pct",
+      "applies": false
+    },
+    "daily_loss_cap_pct": {
+      "value": 0.2,
+      "source": "2026 CME Group University Trading Challenge — Competition Rules, Regulations and Requirements (plan/RULES.md), p9: \"If a team loses 20% of its available account balance in one day, the account is locked for the remainder of the trading day.\"",
+      "note": "Base = prior trade date's closing balance (Daily tab), $1,000,000 before the first close; loss = −(realized today + open P&L). Interpretation chosen by Ilan 2026-10-01."
+    },
+    "max_drawdown_usd": {
+      "value": null,
+      "source": null,
+      "note": "No drawdown rule in the 2026 UTC rules",
+      "applies": false
+    },
+    "max_contracts": {
+      "value": null,
+      "source": null,
+      "note": "p9: \"The number of contracts traded is limited to the margin requirements posted in the rules.\" No fixed count.",
+      "applies": false
+    },
+    "micro_to_standard_ratio": {
+      "value": null,
+      "source": null,
+      "note": "No contract-count limit, so no micro ratio",
+      "applies": false
+    },
+    "flatten_time_ct": {
+      "value": "15:45",
+      "source": "2026 CME Group University Trading Challenge — Competition Rules, Regulations and Requirements (plan/RULES.md), p9: \"On the last day of the competition, teams must have all positions closed 15 minutes prior to the market close or they will be auto-liquidated\"; p6: \"Concludes Friday, October 30 at 4:00 p.m. CT\"",
+      "note": "15:45 CT = 15 min before the 16:00 CT close. Product closes vary (p6: \"Trading hours vary per contract\"); check your product."
+    },
+    "flatten_dates": {
+      "value": [
+        "2026-10-30"
+      ],
+      "source": "2026 CME Group University Trading Challenge — Competition Rules, Regulations and Requirements (plan/RULES.md), p6/p9/p10: last day of the competition only; $1,000 per open contract penalty plus auto-liquidation"
+    },
+    "hold_margin_multipliers": {
+      "value": {
+        "intraday": 1,
+        "overnight": 1,
+        "weekend": 1
+      },
+      "source": "2026 CME Group University Trading Challenge — Competition Rules, Regulations and Requirements (plan/RULES.md), p9: \"All accounts should maintain proper margin at all times.\" No intraday/overnight/weekend distinction in the rules",
+      "note": "1 = exchange margin as posted, any hold"
+    },
+    "margin_basis": {
+      "value": "initial",
+      "source": "Rules silent (p9 'maintain proper margin'); Ilan chose initial margin 2026-10-01 (conservative)"
+    },
+    "allowed_roots": {
+      "value": null,
+      "source": null,
+      "note": "p7: \"Teams will be able to trade all the supported CME Group futures products\" — no restriction",
+      "applies": false
+    },
+    "challenge_start_date": {
+      "value": "2026-10-04",
+      "source": "2026 CME Group University Trading Challenge — Competition Rules, Regulations and Requirements (plan/RULES.md), p6: \"Begins Sunday, October 4 at 5:00 p.m. CT\" (first trade date Mon 2026-10-05)"
+    },
+    "challenge_end_date": {
+      "value": "2026-10-30",
+      "source": "2026 CME Group University Trading Challenge — Competition Rules, Regulations and Requirements (plan/RULES.md), p6: \"Concludes Friday, October 30 at 4:00 p.m. CT\""
+    },
+    "min_contracts_per_day": {
+      "value": 10,
+      "source": "2026 CME Group University Trading Challenge — Competition Rules, Regulations and Requirements (plan/RULES.md), p9/p10: \"Teams are required to execute at least 10 contracts per day … can be an entry (long or short) or an exit\"; $1,000 penalty per day below 10"
+    },
+    "commission_per_side_usd": {
+      "value": 2.5,
+      "source": "2026 CME Group University Trading Challenge — Competition Rules, Regulations and Requirements (plan/RULES.md), p9: \"A commission of $2.50 is charged per traded contract per side.\""
+    }
   }
 }

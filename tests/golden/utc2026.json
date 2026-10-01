@@ -1,0 +1,68 @@
+{
+  "note": "ADR-008 vectors for the 2026 CME Group University Trading Challenge rules (plan/RULES.md). Hand-computed; see calc.",
+  "rules_fixture": {
+    "starting_balance_usd": {"value": 1000000, "source": "RULES p9"},
+    "daily_loss_cap_usd": {"value": null, "source": null, "applies": false},
+    "daily_loss_cap_pct": {"value": 0.2, "source": "RULES p9"},
+    "max_drawdown_usd": {"value": null, "source": null, "applies": false},
+    "max_contracts": {"value": null, "source": null, "applies": false},
+    "micro_to_standard_ratio": {"value": null, "source": null, "applies": false},
+    "flatten_time_ct": {"value": "15:45", "source": "RULES p9"},
+    "flatten_dates": {"value": ["2026-10-30"], "source": "RULES p6/p9"},
+    "hold_margin_multipliers": {"value": {"intraday": 1, "overnight": 1, "weekend": 1}, "source": "RULES p9"},
+    "margin_basis": {"value": "initial", "source": "user decision"},
+    "allowed_roots": {"value": null, "source": null, "applies": false},
+    "challenge_start_date": {"value": "2026-10-04", "source": "RULES p6"},
+    "challenge_end_date": {"value": "2026-10-30", "source": "RULES p6"},
+    "min_contracts_per_day": {"value": 10, "source": "RULES p9"},
+    "commission_per_side_usd": {"value": 2.5, "source": "RULES p9"}
+  },
+  "pctCapCents": [
+    {"base": 100000000, "expect": 20000000, "calc": "$1,000,000 x 0.2"},
+    {"base": 99876543, "expect": 19975308, "calc": "19,975,308.6 floored"},
+    {"base": null, "expect": null},
+    {"base": 0, "expect": null},
+    {"base": 100000000, "pct_override": 1.5, "expect": null, "calc": "pct outside (0,1]"}
+  ],
+  "dailyLossWithPctCap": [
+    {"id": "U1", "realized": -1500000, "open": -500000, "cap": 20000000, "expect": {"level": "ok", "used_cents": 2000000, "limit_cents": 20000000, "remaining_cents": 18000000, "used_ratio": 0.1}},
+    {"id": "U2", "realized": -16000000, "open": 0, "cap": 20000000, "expect": {"level": "warn", "used_cents": 16000000, "limit_cents": 20000000, "remaining_cents": 4000000, "used_ratio": 0.8}},
+    {"id": "U3", "realized": -20000000, "open": 0, "cap": 20000000, "expect": {"level": "breach", "used_cents": 20000000, "limit_cents": 20000000, "remaining_cents": 0, "used_ratio": 1}},
+    {"id": "U4", "realized": -100, "open": 0, "cap": null, "expect": {"level": "unknown", "used_cents": 100, "limit_cents": null, "remaining_cents": null, "used_ratio": null}}
+  ],
+  "minContracts": [
+    {"traded": 6, "expect": {"level": "warn", "required": 10, "remaining": 4}},
+    {"traded": 10, "expect": {"level": "ok", "required": 10, "remaining": 0}},
+    {"traded": 12, "expect": {"level": "ok", "required": 10, "remaining": 0}},
+    {"traded": null, "expect": {"level": "unknown", "required": 10, "remaining": null}},
+    {"traded": 3, "rule_override": {"min_contracts_per_day": {"value": null, "source": null, "applies": false}}, "expect": {"level": "na", "required": null, "remaining": null}}
+  ],
+  "contractsTradedOn": {
+    "trades": [
+      {"id": "A", "root": "ES", "side": "long", "qty": 3, "entry": 5800, "exit": 5801, "entry_time": "2026-10-05T09:00:00-05:00", "exit_time": "2026-10-05T10:00:00-05:00", "fees_usd": 15},
+      {"id": "B", "root": "CL", "side": "short", "qty": 2, "entry": 70, "exit": 69.9, "entry_time": "2026-10-05T14:00:00-05:00", "exit_time": "2026-10-05T18:00:00-05:00", "fees_usd": 10},
+      {"id": "C", "root": "GC", "side": "long", "qty": 1, "entry": 2650, "exit": null, "entry_time": "2026-10-04T18:00:00-05:00", "exit_time": null, "fees_usd": 2.5}
+    ],
+    "calc": "A entry+exit 10-05: 3+3; B entry 10-05: 2, exit 18:00 CT -> 10-06: 2; C Sun 18:00 -> Mon 10-05: 1",
+    "expect": {"2026-10-05": 9, "2026-10-06": 2, "2026-10-07": 0},
+    "bad_time_trade": {"id": "D", "root": "ES", "side": "long", "qty": 1, "entry": 5800, "exit": null, "entry_time": "2026-10-05 09:00", "exit_time": null, "fees_usd": 0}
+  },
+  "flattenWithDates": [
+    {"now": "2026-10-05T15:00:00Z", "open": true, "expect": {"level": "ok", "value": null}, "message_includes": "2026-10-30"},
+    {"now": "2026-10-30T20:00:00Z", "open": true, "calc": "15:00 CDT -> 45", "expect": {"level": "ok", "value": 45}},
+    {"now": "2026-10-30T20:15:00Z", "open": true, "calc": "15:15 CDT -> 30", "expect": {"level": "warn", "value": 30}},
+    {"now": "2026-10-30T20:45:00Z", "open": true, "calc": "15:45 CDT -> 0", "expect": {"level": "breach", "value": 0}},
+    {"now": "2026-10-31T15:00:00Z", "open": true, "calc": "Sat -> trade date Mon 11-02, not listed", "expect": {"level": "ok", "value": null}, "message_includes": "no remaining flatten dates"}
+  ],
+  "sizer": [
+    {"id": "Z1", "root": "ES", "risk_budget_usd": 500, "stop_ticks": 32, "fee_per_contract_usd": 5, "available_margin_usd": 1000000, "margin_per_contract_usd": 20000, "hold": "intraday",
+     "calc": "per 32*1250+500=40500; risk floor(50000/40500)=1; margin floor(100000000/2000000)=50; max n/a",
+     "expect": {"status": "ok", "contracts": 1, "binding": "risk", "per_contract_risk_cents": 40500, "limits": {"risk": 1, "margin": 50, "max_contracts": null}}},
+    {"id": "Z2", "root": "ES", "risk_budget_usd": 1000000, "stop_ticks": 4, "fee_per_contract_usd": 5, "available_margin_usd": 1000000, "margin_per_contract_usd": 20000, "hold": "overnight",
+     "calc": "per 4*1250+500=5500; risk floor(100000000/5500)=18181; margin 50",
+     "expect": {"status": "ok", "contracts": 50, "binding": "margin", "per_contract_risk_cents": 5500, "limits": {"risk": 18181, "margin": 50, "max_contracts": null}}},
+    {"id": "Z3", "root": "MES", "risk_budget_usd": 500, "stop_ticks": 32, "fee_per_contract_usd": 5, "available_margin_usd": 10000, "margin_per_contract_usd": 1500, "hold": "weekend",
+     "calc": "per 32*125+500=4500; risk floor(50000/4500)=11; margin floor(1000000/150000)=6; micro ratio n/a",
+     "expect": {"status": "ok", "contracts": 6, "binding": "margin", "per_contract_risk_cents": 4500, "limits": {"risk": 11, "margin": 6, "max_contracts": null}}}
+  ]
+}

@@ -40,9 +40,10 @@
  */
 
 /**
- * A rule value is known iff `value !== null`.
+ * A rule value is known iff `value !== null` and `applies !== false`.
+ * `applies: false` means "not a rule in this challenge" (ADR-008): shown as not applicable, never as UNKNOWN.
  * @template V
- * @typedef {{value: V|null, source: string|null, note?: string}} Rule
+ * @typedef {{value: V|null, source: string|null, note?: string, applies?: boolean}} Rule
  */
 
 /**
@@ -58,6 +59,10 @@
  * @property {Rule<string[]>} allowed_roots
  * @property {Rule<string>} challenge_start_date
  * @property {Rule<string>} challenge_end_date
+ * @property {Rule<number>} [daily_loss_cap_pct]       fraction of the prior trade date's closing balance, e.g. 0.2 (ADR-008)
+ * @property {Rule<string[]>} [flatten_dates]          trade dates on which flatten_time_ct applies; absent = every day (ADR-008)
+ * @property {Rule<number>} [min_contracts_per_day]    minimum contracts traded (entries + exits) per trade date (ADR-008)
+ * @property {Rule<number>} [commission_per_side_usd]  commission per contract per side (ADR-008)
  */
 
 /**

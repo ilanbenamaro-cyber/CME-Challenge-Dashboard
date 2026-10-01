@@ -118,6 +118,14 @@ const RULE_TYPES = {
   },
   challenge_start_date: { want: 'a string', ok: isStr },
   challenge_end_date: { want: 'a string', ok: isStr },
+  // ADR-008 optional keys.
+  daily_loss_cap_pct: { want: 'a number > 0 and <= 1', ok: (v) => isPosNum(v) && /** @type {number} */ (v) <= 1 },
+  flatten_dates: {
+    want: 'an array of "YYYY-MM-DD" strings',
+    ok: (v) => Array.isArray(v) && v.every((x) => isStr(x) && /^\d{4}-\d{2}-\d{2}$/.test(x)),
+  },
+  min_contracts_per_day: { want: 'a whole number >= 0', ok: (v) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 },
+  commission_per_side_usd: { want: 'a number >= 0', ok: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 },
 };
 const HOLD_KEYS = ['intraday', 'overnight', 'weekend'];
 
@@ -137,6 +145,8 @@ function shown(v) {
 /**
  * Validate the rules file (pure). Values are NOT defaulted or coerced: a malformed entry or a value of the
  * wrong type becomes `{value: null}` (UNKNOWN) and is listed in `errors`. Unknown keys are dropped and listed.
+ * `applies` (ADR-008) is kept when it is a boolean; any other type is listed and dropped (the rule then counts as
+ * applicable, so a null value shows UNKNOWN rather than silently "not a rule").
  * @param {unknown} json
  * @returns {{rules: RulesFile|null, errors: string[]}}
  */
@@ -187,7 +197,13 @@ export function validateRulesFile(json) {
       errors.push(`${k}: expected ${spec.want}, got ${shown(value)}; treated as UNKNOWN`);
       value = null;
     }
-    rules[k] = { value, source };
+    /** @type {{value: unknown, source: unknown, applies?: boolean}} */
+    const entry = { value, source };
+    if ('applies' in v) {
+      if (typeof v.applies === 'boolean') entry.applies = v.applies;
+      else errors.push(`${k}.applies: expected true or false, got ${shown(v.applies)} (ignored)`);
+    }
+    rules[k] = entry;
   }
   return {
     rules: /** @type {RulesFile} */ (/** @type {unknown} */ ({

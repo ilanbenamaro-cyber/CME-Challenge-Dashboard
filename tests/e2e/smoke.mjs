@@ -92,6 +92,9 @@ function bars(start, step) {
   return out;
 }
 const golden = JSON.parse(readFileSync(join(ROOT, 'tests/golden/sizer.json'), 'utf8'));
+const utcGolden = JSON.parse(readFileSync(join(ROOT, 'tests/golden/utc2026.json'), 'utf8'));
+/** ADR-008: the 2026 UTC rules (golden fixture), served instead of the sizer fixture in the *-utc scenario. */
+const UTC_RULES = { schema_version: 1, updated_at: 'e2e', source_doc: 'tests/golden/utc2026.json#rules_fixture (TEST FIXTURE)', rules: utcGolden.rules_fixture };
 const FIXTURES = {
   'rules.json': { schema_version: 1, updated_at: 'e2e', source_doc: 'tests/golden/sizer.json#rules_fixture (TEST FIXTURE)', rules: golden.rules_fixture },
   'bars.json': env('bars', { roots: { ES: { symbol: 'ES.c.0', bars: bars(5790.25, 0.5) }, NQ: { symbol: 'NQ.c.0', bars: bars(20100, 2.25) } }, aliases: { MES: 'ES', MNQ: 'NQ' }, cost_usd: 0.004 }, NOW - 35 * MIN),
@@ -134,7 +137,7 @@ function check(cond, msg) {
 
 /**
  * @param {any} browser
- * @param {{name: string, live: boolean, dark?: boolean, width?: number, height?: number, inject?: boolean}} sc
+ * @param {{name: string, live: boolean, utc?: boolean, dark?: boolean, width?: number, height?: number, inject?: boolean}} sc
  */
 async function scenario(browser, sc) {
   const mobile = (sc.width ?? 390) < 600;
@@ -164,7 +167,7 @@ async function scenario(browser, sc) {
     await context.addInitScript((/** @type {string} */ url) => {
       localStorage.setItem('cme-dash.settings.v1', JSON.stringify({ sheet_url: url, sheet_key: 'k', watched_roots: ['ES', 'MES', 'NQ', 'CL'], expiry_warn_days: 5 }));
     }, SHEET_URL);
-    for (const [file, body] of Object.entries(FIXTURES)) {
+    for (const [file, body] of Object.entries({ ...FIXTURES, ...(sc.utc ? { 'rules.json': UTC_RULES } : {}) })) {
       await page.route(`**/data/${file}?*`, (/** @type {any} */ r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }));
     }
     await page.route('https://script.google.com/**', (/** @type {any} */ r) => r.fulfill({
@@ -202,7 +205,34 @@ async function scenario(browser, sc) {
   check(await page.locator('#app .panel-error').count() === 0, `${tag} no panel failed to build`);
   check(await page.locator('.chips .chip').count() === 6, `${tag} six freshness chips`);
 
-  if (sc.live) {
+  if (sc.live && sc.utc) {
+    // UTC 2026 rules over the same Sheet (Wed 2026-09-30 14:45 CDT, before the challenge window).
+    await page.waitForFunction(() => document.querySelector('#p-positions tbody tr') !== null, null, { timeout: 10000 });
+    const banners = await page.locator('.banners').innerText();
+    check(!/rules UNKNOWN/.test(banners), `${tag} no rules UNKNOWN banner`);
+    check(/No flatten required today \(final-day flatten by 15:45 CT on 2026-10-30\)/.test(banners), `${tag} flatten is the calm info line`);
+    check(await page.locator('.banners .banner-flatten').count() === 0, `${tag} no flatten banner box on a non-flatten day`);
+    const acct = await page.locator('#p-account').innerText();
+    // Fixture dates are in the practice period (before the first trade date 2026-10-05), so the Daily 2026-09-29
+    // row is ignored (RULES p6: balances reset) and the base is the $1,000,000 starting balance x 20% = $200,000.00.
+    check(/Daily loss vs 20% lock/.test(acct) && acct.includes('$200,000.00') && /starting balance/.test(acct), `${tag} daily loss vs 20% of the starting balance ($200,000.00)`);
+    check(acct.includes('No drawdown rule in this challenge'), `${tag} drawdown shown as not a rule`);
+    // C1 entry + exit (1 + 1) and O1 entry (2) on 2026-09-30 = 4.
+    const ct = await page.locator('[data-meter="min_contracts"]').innerText();
+    check(/4 \/ 10/.test(ct) && /6 more needed/.test(ct), `${tag} contracts traded today 4 / 10, 6 more needed`);
+    const pos = await page.locator('#p-positions').innerText();
+    check(/no contract cap \(margin-limited\)/.test(pos), `${tag} positions: no contract cap`);
+    // Sizer with the fee left blank: MES 32 ticks x $1.25 = $40 + $5.00 (2 x $2.50) = $45 -> floor(500 / 45) = 11.
+    await page.selectOption('#sizer-form select[name="root"]', 'MES');
+    await page.fill('#sizer-form input[name="risk_budget_usd"]', '500');
+    await page.fill('#sizer-form input[name="stop_ticks"]', '32');
+    await page.check('#sizer-form input[name="hold"][value="intraday"]');
+    const n = await page.locator('[data-live="sizer"] .sizer-n').innerText();
+    check(n.trim() === '11', `${tag} sizer shows 11 contracts with the defaulted fee (got ${n})`);
+    const sizerText = await page.locator('[data-live="sizer"]').innerText();
+    check(/n\/a \(margin-limited\)/.test(sizerText), `${tag} sizer max contracts n/a (margin-limited)`);
+    check(/fee defaulted from \$2\.50\/side commission/.test(sizerText), `${tag} sizer fee default note`);
+  } else if (sc.live) {
     await page.waitForFunction(() => document.querySelector('#p-positions tbody tr') !== null, null, { timeout: 10000 });
     const sheetChip = await page.locator('.chip', { hasText: 'sheet' }).innerText();
     check(/FRESH/.test(sheetChip), `${tag} sheet chip FRESH (${sheetChip.replace(/\s+/g, ' ')})`);
@@ -233,7 +263,13 @@ async function scenario(browser, sc) {
     check(dialogs === 0, `${tag} no dialog opened (XSS payload inert)`);
   } else {
     const banners = await page.locator('.banners').innerText();
-    check(/rules UNKNOWN/.test(banners), `${tag} rules UNKNOWN banner shown`);
+    // ADR-008: the committed rules.json holds the real 2026 UTC rules, so there is no "rules UNKNOWN" banner.
+    check(!/rules UNKNOWN/.test(banners), `${tag} no rules UNKNOWN banner (real rules committed)`);
+    check(/No flatten required today/.test(banners), `${tag} flatten is the calm info line`);
+    const ct = await page.locator('[data-meter="min_contracts"]').innerText();
+    check(/UNKNOWN/.test(ct), `${tag} contracts traded today UNKNOWN without the Sheet`);
+    const dl = await page.locator('[data-meter="daily_loss"]').innerText();
+    check(/Daily loss vs 20% lock/.test(dl) && /UNKNOWN/.test(dl), `${tag} daily loss vs 20% lock UNKNOWN without the Sheet`);
     check(/Sheet MISSING/i.test(banners), `${tag} Sheet not configured banner shown`);
     const acct = await page.locator('#p-account').innerText();
     check(!acct.includes('$0.00'), `${tag} unknown account values are not rendered as $0.00`);
@@ -264,6 +300,7 @@ try {
   await scenario(browser, { name: 'iphone-committed', live: false });
   await scenario(browser, { name: 'iphone-live', live: true });
   await scenario(browser, { name: 'iphone-live-dark', live: true, dark: true });
+  await scenario(browser, { name: 'iphone-live-utc', live: true, utc: true });
   await scenario(browser, { name: 'desktop-live', live: true, width: 1280, height: 900 });
   await scenario(browser, { name: 'iphone-core-failure', live: false, inject: true });
   check(served.has('/js/main.mjs') && served.has('/js/ui/render.mjs'), 'site modules were served from docs/ by this server');
