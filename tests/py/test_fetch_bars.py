@@ -411,3 +411,35 @@ def test_available_end_parser_handles_both_422_texts():
     assert fetch_bars.licensed_end(a) == datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
     assert fetch_bars.licensed_end(b) == datetime(2026, 9, 30, 18, 0, tzinfo=timezone.utc)
     assert fetch_bars.licensed_end(RuntimeError("422 symbology_invalid_request")) is None
+
+
+def test_server_error_on_range_is_retried_once(tmp_path):
+    """Seen on Actions 2026-10-01: NQ get_range -> 'BentoServerError: 504 The remote gateway timed out.'"""
+    now = datetime(2026, 10, 6, 15, 7, tzinfo=timezone.utc)
+    rec = Recorder()
+    inner = rec.timeseries
+    state = {"failed": False}
+
+    class T:
+        def get_range(self, **p):
+            if p["symbols"] == ["NQ.c.0"] and not state["failed"]:
+                state["failed"] = True
+                rec.calls.append(("get_range", p))
+                raise RuntimeError("BentoServerError: 504 The remote gateway timed out.")
+            return inner.get_range(**p)
+
+    rec.timeseries = T()
+    slept = []
+    env = fetch_bars.run(now, tmp_path / "bars.json", client_factory=lambda key: rec, env=ENV, sleep=slept.append)
+    assert env["status"] == "ok", env["errors"]
+    assert slept == [fetch_bars.RETRY_SLEEP_S]
+    nq = [p for n, p in rec.calls if n == "get_range" and p["symbols"] == ["NQ.c.0"]]
+    assert len(nq) == 2 and nq[0] == nq[1]                       # same, already cost-checked params
+
+
+def test_server_error_twice_is_reported_not_looped(tmp_path):
+    now = datetime(2026, 10, 6, 15, 7, tzinfo=timezone.utc)
+    rec = Recorder(range_exc={"NQ": RuntimeError("BentoServerError: 504 The remote gateway timed out.")})
+    env = fetch_bars.run(now, tmp_path / "bars.json", client_factory=lambda key: rec, env=ENV, sleep=lambda s: None)
+    assert env["status"] == "partial"
+    assert sum(1 for n, p in rec.calls if n == "get_range" and p["symbols"] == ["NQ.c.0"]) == 2

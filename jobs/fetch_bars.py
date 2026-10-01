@@ -16,6 +16,7 @@ import math
 import os
 import re
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -70,6 +71,23 @@ def licensed_end(exc: BaseException) -> datetime | None:
         return None
     t = datetime.strptime(m.group(1).replace(" ", "T"), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
     return _floor_hour(t)
+
+
+_SERVER_ERROR_RE = re.compile(r"BentoServerError|\b5\d\d\b.*(gateway|timed out|unavailable|internal)", re.I)
+RETRY_SLEEP_S = 5.0
+
+
+def get_range_with_retry(client: Any, params: dict, sleep: Callable[[float], None] = time.sleep) -> Any:
+    """timeseries.get_range, retried once after a short pause on a Databento server-side error (5xx, e.g.
+    '504 The remote gateway timed out', seen on Actions 2026-10-01). Same params, already cost-checked (A10);
+    a failed request is not billed. Client errors (4xx) are never retried here."""
+    try:
+        return client.timeseries.get_range(**params)
+    except Exception as exc:  # noqa: BLE001
+        if not _SERVER_ERROR_RE.search(str(exc)) and type(exc).__name__ != "BentoServerError":
+            raise
+        sleep(RETRY_SLEEP_S)
+        return client.timeseries.get_range(**params)
 
 
 def entitled_end(client: Any) -> datetime | None:
@@ -194,6 +212,7 @@ def run(
     dry_run: bool = False,
     env: Mapping[str, str] | None = None,
     contracts: list[dict] | None = None,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> dict:
     """Fetch bars, write the envelope atomically to `out`, return it."""
     env = os.environ if env is None else env
@@ -325,7 +344,7 @@ def run(
             elif params["end"] != end_str:
                 params, quote = requote(root, end)
             try:
-                store = client.timeseries.get_range(**params)
+                store = get_range_with_retry(client, params, sleep)
             except Exception as exc:  # noqa: BLE001
                 lic_end = licensed_end(exc)
                 req_end = _parse_t(params["end"])
@@ -335,7 +354,7 @@ def run(
                 # keep the cap, retry once. The bars are then delayed and the site marks them STALE by their age.
                 delayed_to = lic_end
                 params, quote = delayed_params(root)
-                store = client.timeseries.get_range(**params)
+                store = get_range_with_retry(client, params, sleep)
             billed += quote
             df = store.to_df()
             bars, dropped = frame_to_bars(df, symbol)
