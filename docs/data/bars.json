@@ -1,12 +1,15 @@
 {
   "schema_version": 1,
   "dataset": "bars",
-  "generated_at": "2026-10-01T00:29:13Z",
+  "generated_at": "2026-10-01T02:06:36Z",
   "data_as_of": null,
   "source": "Databento GLBX.MDP3 ohlcv-1h (stype_in=continuous, <ROOT>.c.0)",
   "status": "error",
   "errors": [
-    "DATABENTO_API_KEY not set"
+    "ES: range request failed: BentoClientError: 422 dataset_unavailable_range Part or all of your request for dataset 'GLBX.MDP3' requires a subscription and/or license to access. Try again with an end time before 2026-09-30T18:07:10.238315000Z. documentation: https://databento.com/pricing#cme",
+    "NQ: range request failed: BentoClientError: 422 dataset_unavailable_range Part or all of your request for dataset 'GLBX.MDP3' requires a subscription and/or license to access. Try again with an end time before 2026-09-30T18:07:14.749735000Z. documentation: https://databento.com/pricing#cme",
+    "CL: range request failed: BentoClientError: 422 dataset_unavailable_range Part or all of your request for dataset 'GLBX.MDP3' requires a subscription and/or license to access. Try again with an end time before 2026-09-30T18:07:15.733461000Z. documentation: https://databento.com/pricing#cme",
+    "GC: range request failed: BentoClientError: 422 dataset_unavailable_range Part or all of your request for dataset 'GLBX.MDP3' requires a subscription and/or license to access. Try again with an end time before 2026-09-30T18:07:16.341900000Z. documentation: https://databento.com/pricing#cme"
   ],
   "data": null
 }
