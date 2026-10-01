@@ -139,3 +139,14 @@ Before shipping, fix P0-1 and P0-2. Both show a confident "flat / OK / green" nu
 dashboard exists to prevent. Each fix is small and local to viewmodel.mjs and needs a regression test. P1-1 and P1-3 should go in the same pass.
 P1-2 and P1-7 depend on the real rule text (RULES.md). Resolve them when the rules are filled in, and until then keep the flatten and daily-loss
 semantics labelled as assumptions in the UI.
+
+## Closure (planner, 2026-10-01)
+- P0-1, P0-2, P1-1, P1-4, P1-5 (label), P1-7 (label), P2-1..P2-5: fixed by the G3 fix pass (merge of worktree-agent-a0101da4),
+  each with a regression test shown failing before the fix. /tmp/g3/vm_invalid_open.mjs re-run on the merged head:
+  all open-position figures, meters and sizer read UNKNOWN; flatten banner level unknown.
+- P1-2 (flatten trade-date anchor), P1-3 (expiry override), P1-6 (Apps Script date zone): fixed by planner, regression
+  tests failing before / passing after.
+- Open, need RULES.md: P1-7 definition of daily loss for overnight positions; P1-5 back-month marks during roll.
+- Open, accepted: P2-6 (1e-6 tick tolerance), P2-7 (actions pinned by tag), P2-8 (Workspace web-app URLs).
+Gates on merged head: tsc clean; js 238/238; py 180/180; e2e ALL CHECKS PASSED.
+Verdict after fixes: SHIP (pending human: RULES.md, secret, Sheet deploy, Pages, iPhone visual gate).
