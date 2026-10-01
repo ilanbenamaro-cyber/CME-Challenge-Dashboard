@@ -22,3 +22,6 @@
 - Databento without a live CME license: GLBX.MDP3 ranges ending in the last ~8h fail with 422 dataset_unavailable_range
   ("Try again with an end time before …"). fetch_bars retries once at that licensed end (cost re-checked, cap kept);
   bars are then ~8h old and the site shows them STALE. Green bars need a live CME license on the Databento account.
+- Databento cost (measured 2026-10-01, Actions log): incremental licensed-window bar fetch ≈ $0.00001 per root per run.
+  Quotes for the live window (refused with 422 when unlicensed) are over-estimated and never billed; cost_usd in bars.json
+  counts billed requests only. Per-request quotes are logged to stderr in the refresh run.
