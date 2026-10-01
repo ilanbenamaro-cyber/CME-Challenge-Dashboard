@@ -150,3 +150,8 @@ Known gaps / risks:
 - Apps Script fetch was verified only against a Playwright-intercepted fixture, never against a real deployment (R8).
 - The iPhone visual gate belongs to Ilan. Screenshots come from the e2e run (tests/e2e/out/, gitignored).
 - `reconcile` 'unknown' date rows render as "UNKNOWN DATE" at warn level. io rejects unparsable times, so they should not occur.
+
+## Phase 0 recon, second pass — 2026-10-01 (from GitHub Actions)
+Facts: 10/10 www.cmegroup.com URLs → 403 application/json (AkamaiGHost), same anti-scraping body citing the Data Terms of
+Use; the honest-UA settlements probe was reset at HTTP/2 level (curl 92). Consequence: ADR-007 (CME website sources disabled).
+Unknowns: rules text (needs a human download), whether any CME public API is licensed for this use.

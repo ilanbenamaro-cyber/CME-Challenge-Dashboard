@@ -1,19 +1,38 @@
 {
-  "_comment": "CME source configuration. NOTHING here is verified: Phase 0 recon could not reach www.cmegroup.com (proxy 403), so URLs, product ids and page shapes are unconfirmed. A null url makes the job fail closed with 'source not configured'. After the first live capture, fix url/hints and set verified:true with a note saying how it was checked.",
+  "_comment": "CME source configuration. DISABLED (ADR-007): a recon run from GitHub Actions on 2026-10-01 got HTTP 403 from CME's Akamai edge for every www.cmegroup.com URL (including robots.txt), with a message that automated access is prohibited by CME Group's website Data Terms of Use. All CME website sources are therefore unset (url null) and the jobs fail closed with 'source not configured'. Margins and daily results come from the Sheet Margins/Daily tabs. Do not re-enable website scraping; use a licensed feed instead (e.g. Databento statistics schema for settlements).",
   "settlements": {
     "verified": false,
-    "note": "Candidate JSON endpoint and product ids recalled from memory by the build session, not checked. Expected shape = jobs/fixtures/settlements_*.SYNTHETIC.json. Micro roots are not configured (their product ids are unknown).",
-    "url_template": "https://www.cmegroup.com/CmeWS/mvc/Settlements/Futures/Settlements/{product_id}/FUT",
+    "note": "DISABLED (ADR-007). Former candidate endpoint .../CmeWS/mvc/Settlements/Futures/Settlements/{product_id}/FUT returned 403 from Actions; website automation is prohibited by CME's Data Terms of Use.",
+    "url_template": null,
     "products": {
-      "ES": {"product_id": 133, "verified": false},
-      "NQ": {"product_id": 146, "verified": false},
-      "CL": {"product_id": 425, "verified": false},
-      "GC": {"product_id": 437, "verified": false}
+      "ES": {
+        "product_id": 133,
+        "verified": false
+      },
+      "NQ": {
+        "product_id": 146,
+        "verified": false
+      },
+      "CL": {
+        "product_id": 425,
+        "verified": false
+      },
+      "GC": {
+        "product_id": 437,
+        "verified": false
+      }
     },
     "hints": {
-      "rows_path": ["settlements"],
-      "trade_date_path": ["tradeDate"],
-      "trade_date_formats": ["%m/%d/%Y", "%Y-%m-%d"],
+      "rows_path": [
+        "settlements"
+      ],
+      "trade_date_path": [
+        "tradeDate"
+      ],
+      "trade_date_formats": [
+        "%m/%d/%Y",
+        "%Y-%m-%d"
+      ],
       "month_field": "month",
       "settle_field": "settle",
       "max_contracts": 4
@@ -21,12 +40,19 @@
   },
   "margins": {
     "verified": false,
-    "note": "No margins endpoint is known to the build session, so url is null and the job reports 'source not configured'. The Sheet Margins tab is the fallback (ADR-004). Expected shape = jobs/fixtures/margins.SYNTHETIC.json.",
+    "note": "DISABLED (ADR-007). Use the Sheet Margins tab (ADR-004).",
     "url": null,
     "hints": {
-      "rows_path": ["rows"],
-      "as_of_path": ["asOf"],
-      "as_of_formats": ["%Y-%m-%d", "%m/%d/%Y"],
+      "rows_path": [
+        "rows"
+      ],
+      "as_of_path": [
+        "asOf"
+      ],
+      "as_of_formats": [
+        "%Y-%m-%d",
+        "%m/%d/%Y"
+      ],
       "root_field": "root",
       "initial_field": "initial",
       "maintenance_field": "maintenance"
@@ -34,7 +60,7 @@
   },
   "challenge": {
     "verified": false,
-    "note": "The challenge daily-results page URL and the account id are unknown to the build session; both are null so the job reports 'source not configured'. Expected shape = jobs/fixtures/challenge.SYNTHETIC.html. Cut-line item 4 in PLAN.md: reconciliation can use the Sheet Daily tab alone.",
+    "note": "DISABLED (ADR-007). Copy daily results into the Sheet Daily tab; reconciliation uses it.",
     "url": null,
     "account": null,
     "hints": {
@@ -46,7 +72,10 @@
         "balance_usd": "Balance",
         "rank": "Rank"
       },
-      "date_formats": ["%m/%d/%Y", "%Y-%m-%d"]
+      "date_formats": [
+        "%m/%d/%Y",
+        "%Y-%m-%d"
+      ]
     }
   }
 }
