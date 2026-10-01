@@ -1,0 +1,44 @@
+name: recon
+# One-off Phase 0 recon (read-only fetches of public CME pages). Lives only on recon/** branches; never merged.
+on:
+  push:
+    branches: ['recon/**']
+permissions:
+  contents: write
+jobs:
+  recon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get install -y -qq poppler-utils >/dev/null
+      - name: Fetch
+        run: |
+          set +e
+          mkdir -p recon
+          BROWSER='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36'
+          HONEST='cme-challenge-dashboard/0.1 (+https://github.com/ilanbenamaro-cyber/CME-Challenge-Dashboard; research, read-only)'
+          probe() { # name url ua
+            curl -sS -L --max-time 30 -A "$3" -H 'Accept: */*' -o "recon/$1.body" -D "recon/$1.headers" -w "$1 %{http_code} %{content_type} %{size_download}\n" "$2" >> recon/status.txt 2>>recon/errors.txt
+          }
+          probe robots https://www.cmegroup.com/robots.txt "$BROWSER"
+          probe utc_rules https://www.cmegroup.com/events/university-trading-challenge/files/2026-university-trading-challenge-rules-regulations.pdf "$BROWSER"
+          probe utc_page https://www.cmegroup.com/events/university-trading-challenge/2026-trading-challenge.html "$BROWSER"
+          probe tc_terms https://www.cmegroup.com/content/dam/cmegroup/education/trading_challenge/files/trading-challenge-rules-2026.pdf "$BROWSER"
+          probe tc_sep https://www.cmegroup.com/news/2026/september-trading-challenge.html "$BROWSER"
+          probe tc_sep_landing https://www.cmegroup.com/futures_challenge/challenges/1608/landing "$BROWSER"
+          probe settle_es_browser https://www.cmegroup.com/CmeWS/mvc/Settlements/Futures/Settlements/133/FUT "$BROWSER"
+          probe settle_es_honest https://www.cmegroup.com/CmeWS/mvc/Settlements/Futures/Settlements/133/FUT "$HONEST"
+          probe margins_page https://www.cmegroup.com/clearing/margins/outright-vol-scans.html "$BROWSER"
+          probe es_margins_page https://www.cmegroup.com/markets/equities/sp/e-mini-sandp500.margins.html "$BROWSER"
+          for f in recon/*.body; do
+            if head -c 5 "$f" | grep -q '%PDF'; then pdftotext -layout "$f" "${f%.body}.txt"; fi
+          done
+          ls -la recon >> recon/status.txt
+      - name: Commit results to this recon branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          find recon -name '*.body' -size +3M -delete
+          git add recon
+          git commit -m "recon: raw CME fetch results [skip ci]" && git push origin "HEAD:${GITHUB_REF_NAME}"
