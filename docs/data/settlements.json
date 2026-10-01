@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "dataset": "settlements",
-  "generated_at": "2026-09-30T00:00:00Z",
+  "generated_at": "2026-10-01T00:29:13Z",
   "data_as_of": null,
-  "source": "CME settlements (www.cmegroup.com; UNVERIFIED source)",
+  "source": "CME settlements via www.cmegroup.com (UNVERIFIED source and parser)",
   "status": "error",
   "errors": [
-    "not yet fetched"
+    "source not configured (settlements url_template/products in jobs/config/sources.json)"
   ],
   "data": null
 }

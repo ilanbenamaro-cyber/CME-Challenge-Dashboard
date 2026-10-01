@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "dataset": "bars",
-  "generated_at": "2026-09-30T00:00:00Z",
+  "generated_at": "2026-10-01T00:29:13Z",
   "data_as_of": null,
-  "source": "Databento GLBX.MDP3 ohlcv-1h (continuous)",
+  "source": "Databento GLBX.MDP3 ohlcv-1h (stype_in=continuous, <ROOT>.c.0)",
   "status": "error",
   "errors": [
-    "not yet fetched"
+    "DATABENTO_API_KEY not set"
   ],
   "data": null
 }
