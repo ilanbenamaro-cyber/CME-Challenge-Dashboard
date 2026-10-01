@@ -15,6 +15,7 @@ from __future__ import annotations
 import math
 import os
 import re
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -94,6 +95,13 @@ def merge_bars(prev: list[dict], new: list[dict], keep: int) -> list[dict]:
     by_t = {b["t"]: b for b in prev}
     by_t.update({b["t"]: b for b in new})
     return [by_t[t] for t in sorted(by_t)][-keep:]
+
+
+def log_cost(kind: str, params: dict, cost: float | None) -> None:
+    """One stderr line per quote, visible in the Actions log; stdout stays one summary line per dataset (no
+    secrets: params never contain the key)."""
+    shown = "invalid" if cost is None else f"${cost:.6f}"
+    print(f"bars {kind}: {params['symbols'][0]} {params['start']} -> {params['end']} quoted {shown}", file=sys.stderr, flush=True)
 
 
 def request_params(root: str, start: datetime, end: datetime) -> dict:
@@ -199,6 +207,7 @@ def run(
         params = request_params(root, root_start, end)
         try:
             cost = _num(client.metadata.get_cost(**params))
+            log_cost("quote", params, cost)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{root}: cost check failed: {safe_error(exc, [key])}")
             continue
@@ -241,6 +250,7 @@ def run(
             raise _NothingNew()
         p = request_params(root, p_start, delayed_to)
         cost = _num(client.metadata.get_cost(**p))
+        log_cost("quote (licensed window)", p, cost)
         if cost is None or cost < 0 or total + cost > COST_CAP_USD:
             raise RuntimeError("cost check for the licensed window failed or exceeds the cost cap")
         total += cost
