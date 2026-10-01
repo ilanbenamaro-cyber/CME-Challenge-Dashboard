@@ -6,7 +6,7 @@ import { buildViewModel } from '../../../docs/js/ui/viewmodel.mjs';
 import { renderApp, renderFatal, BUILD_ID } from '../../../docs/js/ui/render.mjs';
 import { defaultSettings } from '../../../docs/js/io/settings.mjs';
 import {
-  NOW, MIN, CME_MARGINS, RULES_COMMITTED, env, barsEnv, sheetRaw, sheetResult, inputs, noSectionErrors,
+  NOW, MIN, CME_MARGINS, RULES_ALL_NULL, env, barsEnv, sheetRaw, sheetResult, inputs, noSectionErrors,
 } from './fixtures.mjs';
 
 test('baseline: fresh data, known rules — P&L, meters and sizer are computed', () => {
@@ -66,8 +66,8 @@ test('baseline: fresh data, known rules — P&L, meters and sizer are computed',
   });
 });
 
-test('all rules UNKNOWN (committed rules.json): sizer and meters UNKNOWN with the rules banner', () => {
-  const vm = buildViewModel(inputs({ rules: RULES_COMMITTED }));
+test('all rules UNKNOWN (all-null rules fixture): sizer and meters UNKNOWN with the rules banner', () => {
+  const vm = buildViewModel(inputs({ rules: RULES_ALL_NULL }));
   noSectionErrors(vm);
   assert.ok(vm.account && vm.sizer);
   for (const m of vm.account.meters) {

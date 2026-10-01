@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { coerceNumber, normalizeSheet } from '../../../docs/js/io/sheet.mjs';
 import { parseRulesFile, validateRulesFile } from '../../../docs/js/io/data.mjs';
 import { buildViewModel } from '../../../docs/js/ui/viewmodel.mjs';
-import { inputs, readJson } from './fixtures.mjs';
+import { allNullRulesJson, inputs, readJson } from './fixtures.mjs';
 
 /** @param {Record<string, unknown>} over */
 function tradeRow(over = {}) {
@@ -97,8 +97,8 @@ test('P2-5: wrongly typed rules.json values become UNKNOWN (null) and are listed
   // Well-typed values pass through unchanged.
   assert.equal(rf.rules.max_drawdown_usd.value, golden.max_drawdown_usd.value);
   assert.deepEqual(parseRulesFile(json), rf);
-  // The committed file (all null) has no load errors.
-  assert.deepEqual(validateRulesFile(readJson('docs/data/rules.json')).errors, []);
+  // An all-null rules file (the pre-ADR-008 placeholder, built by the fixture) has no load errors.
+  assert.deepEqual(validateRulesFile(allNullRulesJson()).errors, []);
 });
 
 test('P2-5: the view model shows rule type errors as a banner and keeps the Account panel', () => {

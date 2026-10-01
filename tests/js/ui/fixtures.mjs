@@ -10,7 +10,17 @@ export const ROOT = new URL('../../../', import.meta.url);
 export const readJson = (p) => JSON.parse(readFileSync(new URL(p, ROOT), 'utf8'));
 
 export const CONTRACTS = parseContractsFile(readJson('docs/data/contracts.json'));
-export const RULES_COMMITTED = parseRulesFile(readJson('docs/data/rules.json')); // every value null
+/**
+ * The pre-ADR-008 placeholder rules file: the 11 original keys, every value null (built here, not read from
+ * docs/data/rules.json, which now holds the real challenge rules).
+ */
+export function allNullRulesJson() {
+  /** @type {Record<string, {value: null, source: null}>} */
+  const rules = {};
+  for (const k of Object.keys(readJson('tests/golden/sizer.json').rules_fixture)) rules[k] = { value: null, source: null };
+  return { schema_version: 1, updated_at: 'fixture', source_doc: 'plan/RULES.md', rules };
+}
+export const RULES_ALL_NULL = parseRulesFile(allNullRulesJson());
 export const FIXTURE_RULES = parseRulesFile({
   schema_version: 1,
   updated_at: 'fixture',
