@@ -1,0 +1,11 @@
+{
+  "_comment": "SYNTHETIC. URL -> fixture file map used by jobs.common.fakes.fixture_fetch (dry run / tests).",
+  "routes": {
+    "https://www.cmegroup.com/SYNTHETIC/settlements/ES.json": "settlements_ES.SYNTHETIC.json",
+    "https://www.cmegroup.com/SYNTHETIC/settlements/NQ.json": "settlements_NQ.SYNTHETIC.json",
+    "https://www.cmegroup.com/SYNTHETIC/settlements/CL.json": "settlements_CL.SYNTHETIC.json",
+    "https://www.cmegroup.com/SYNTHETIC/settlements/GC.json": "settlements_GC.SYNTHETIC.json",
+    "https://www.cmegroup.com/SYNTHETIC/margins.json": "margins.SYNTHETIC.json",
+    "https://www.cmegroup.com/SYNTHETIC/challenge.html": "challenge.SYNTHETIC.html"
+  }
+}

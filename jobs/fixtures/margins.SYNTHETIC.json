@@ -1,0 +1,16 @@
+{
+  "_comment": "SYNTHETIC fixture: invented shape and made-up margin amounts for parser tests and dry run. Not CME data; the real margins source and shape are UNVERIFIED.",
+  "asOf": "2026-09-29",
+  "rows": [
+    {"root": "ES", "exchange": "CME", "period": "DEC 26", "initial": "11,000", "maintenance": "10,000"},
+    {"root": "ES", "exchange": "CME", "period": "MAR 27", "initial": "11,500", "maintenance": "10,500"},
+    {"root": "MES", "exchange": "CME", "period": "DEC 26", "initial": "1,100", "maintenance": "1,000"},
+    {"root": "NQ", "exchange": "CME", "period": "DEC 26", "initial": "22,000", "maintenance": "20,000"},
+    {"root": "MNQ", "exchange": "CME", "period": "DEC 26", "initial": "2,200", "maintenance": "2,000"},
+    {"root": "CL", "exchange": "NYMEX", "period": "NOV 26", "initial": "$6,600.00", "maintenance": "$6,000.00"},
+    {"root": "MCL", "exchange": "NYMEX", "period": "NOV 26", "initial": "$660.00", "maintenance": "$600.00"},
+    {"root": "GC", "exchange": "COMEX", "period": "DEC 26", "initial": "9,900", "maintenance": "9,000"},
+    {"root": "MGC", "exchange": "COMEX", "period": "DEC 26", "initial": "990", "maintenance": "900"},
+    {"root": "ZZ", "exchange": "CBOT", "period": "DEC 26", "initial": "1,000", "maintenance": "900"}
+  ]
+}

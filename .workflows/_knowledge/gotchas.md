@@ -12,3 +12,8 @@
 - Re-running a workflow replays the ORIGINAL commit; after editing a workflow use `gh workflow run refresh.yml`.
 - Apps Script web apps redirect script.google.com → script.googleusercontent.com; CSP connect-src needs both.
 - Apps Script: fetch with a simple GET (no custom headers) to avoid a CORS preflight, which Apps Script does not answer.
+- Bars marks use Databento `<ROOT>.c.0` (front month by calendar). During the roll window a held back-month contract is
+  mis-marked by the calendar spread × multiplier × qty. The UI labels marks "front-month continuous" (G3 P1-5).
+- Daily-loss = −(realized today + open P&L since entry) over-counts for positions held overnight; the challenge's real
+  definition (vs prior settle?) must come from RULES.md. Labelled as an assumption in the UI (G3 P1-7).
+- Flatten banner is anchored to the CME trade date: between 15:10 and 17:00 CT it breaches; at 17:00 it rolls to the next day.

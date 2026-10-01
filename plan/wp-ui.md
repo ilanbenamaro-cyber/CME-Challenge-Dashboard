@@ -67,7 +67,7 @@ value plus a `STALE` badge with the age.
   and re-fetches every 5 min and on the Refresh button. No inline scripts or handlers (CSP).
 - `docs/index.html`: `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self';
   style-src 'self'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com;
-  base-uri 'none'; form-action 'none'; frame-ancestors 'none'">` (the boundary test pins the default/script/connect-src
+  base-uri 'none'; form-action 'none'">` (the boundary test pins the default/script/connect-src
   lists). Viewport meta, `theme-color`, `<script type="module" src="js/main.mjs">`.
 - `docs/css/app.css`: mobile-first (390px). Clear red/amber/green/grey (unknown) levels that don't rely on colour alone
   (icon + text). Dark mode via `prefers-color-scheme`. No horizontal scroll: wrap tables in overflow containers.
