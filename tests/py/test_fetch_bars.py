@@ -236,3 +236,62 @@ def test_contract_list_drives_roots():
     contracts = load_contracts()
     parents = [c["root"] for c in contracts if c["parent"] is None]
     assert parents == ["ES", "NQ", "CL", "GC"]
+
+
+class LicensedRecorder(Recorder):
+    """Databento account without a live CME license: any range ending after `limit` is refused with the real 422 text."""
+
+    def __init__(self, limit):
+        super().__init__()
+        rec = self
+        inner = self.timeseries
+
+        class T:
+            def get_range(self, **p):
+                end = datetime.fromisoformat(p["end"].replace("Z", "+00:00"))
+                if end > limit:
+                    rec.calls.append(("get_range", p))
+                    raise RuntimeError(
+                        "BentoClientError: 422 dataset_unavailable_range Part or all of your request for dataset "
+                        "'GLBX.MDP3' requires a subscription and/or license to access. Try again with an end time "
+                        f"before {limit:%Y-%m-%dT%H:%M:%S}.238315000Z. documentation: https://databento.com/pricing#cme")
+                return inner.get_range(**p)
+
+        self.timeseries = T()
+
+
+def test_unlicensed_live_range_falls_back_to_delayed_window(tmp_path):
+    # Real 2026-10-01 run: now 02:07Z, license end 2026-09-30T18:07:10Z -> floored 18:00Z (8h delayed).
+    now = datetime(2026, 10, 1, 2, 7, tzinfo=timezone.utc)
+    limit = datetime(2026, 9, 30, 18, 7, 10, tzinfo=timezone.utc)
+    rec = LicensedRecorder(limit)
+    env = _run(now, tmp_path, rec)
+    validate("bars", env)
+    assert env["status"] == "ok", env["errors"]
+    assert "delayed" in env["source"] and "2026-09-30T18:00Z" in env["source"]
+    # data_as_of is the last bar close of the delayed window, never later than the licensed end.
+    assert env["data_as_of"] <= "2026-09-30T18:00:00Z"
+    # A10 still holds: every get_range is preceded by a get_cost with identical params.
+    for i, (name, p) in enumerate(rec.calls):
+        if name == "get_range" and p["end"] == "2026-09-30T18:00:00Z":
+            assert ("get_cost", p) in rec.calls[:i]
+    # Only the first root hits the 422; the rest go straight to the delayed window.
+    refused = [p for n, p in rec.calls if n == "get_range" and p["end"] == "2026-10-01T02:00:00Z"]
+    assert len(refused) == 1
+
+
+def test_unlicensed_fallback_respects_cost_cap(tmp_path):
+    now = datetime(2026, 10, 1, 2, 7, tzinfo=timezone.utc)
+    rec = LicensedRecorder(datetime(2026, 9, 30, 18, 7, 10, tzinfo=timezone.utc))
+    rec.costs = {"ES": 1.99}  # planned total ~2.0; the re-check for the delayed window would exceed $2.00
+    env = _run(now, tmp_path, rec)
+    assert all(not (n == "get_range" and p["symbols"] == ["ES.c.0"] and p["end"] == "2026-09-30T18:00:00Z") for n, p in rec.calls)
+    assert any("ES: range request failed" in e and "cap" in e for e in env["errors"])
+
+
+def test_other_422_errors_are_not_retried(tmp_path):
+    now = datetime(2026, 10, 1, 2, 7, tzinfo=timezone.utc)
+    rec = Recorder(range_exc={r: RuntimeError("422 symbology_invalid_request") for r in ["ES", "NQ", "CL", "GC"]})
+    env = _run(now, tmp_path, rec)
+    assert env["status"] == "error"
+    assert sum(1 for n, _ in rec.calls if n == "get_range") == 4

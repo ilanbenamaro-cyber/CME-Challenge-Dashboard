@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -46,6 +47,20 @@ def window(now: datetime) -> tuple[datetime, datetime]:
     """[now - 72h, now) with both ends floored to the hour, in UTC."""
     end = now.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
     return end - LOOKBACK, end
+
+
+_LICENSE_END_RE = re.compile(r"dataset_unavailable_range.*?end time before (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})", re.S)
+
+
+def licensed_end(exc: BaseException) -> datetime | None:
+    """If Databento refused the range because the account's license only covers data up to some time
+    (422 dataset_unavailable_range, e.g. no live CME license -> data delayed), return that time floored
+    to the hour (UTC). Otherwise None."""
+    m = _LICENSE_END_RE.search(str(exc))
+    if not m:
+        return None
+    t = datetime.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    return t.replace(minute=0, second=0, microsecond=0)
 
 
 def request_params(root: str, start: datetime, end: datetime) -> dict:
@@ -162,10 +177,35 @@ def run(
     # 2) Spend: identical params to the cost check.
     result_roots: dict[str, dict] = {}
     latest: datetime | None = None
+    delayed_to: datetime | None = None
+
+    def delayed_params(root: str) -> dict:
+        """Params for the licensed (delayed) window, cost-checked against the cap before any spend (A10)."""
+        nonlocal total
+        assert delayed_to is not None
+        p = request_params(root, delayed_to - LOOKBACK, delayed_to)
+        cost = _num(client.metadata.get_cost(**p))
+        if cost is None or cost < 0 or total + cost > COST_CAP_USD:
+            raise RuntimeError("cost check for the licensed window failed or exceeds the cost cap")
+        total += cost
+        return p
+
     for root, params in planned:
         symbol = symbol_for(root)
         try:
-            store = client.timeseries.get_range(**params)
+            if delayed_to is not None:
+                params = delayed_params(root)
+            try:
+                store = client.timeseries.get_range(**params)
+            except Exception as exc:  # noqa: BLE001
+                lic_end = licensed_end(exc)
+                if lic_end is None or delayed_to is not None or lic_end >= end:
+                    raise
+                # License only covers data up to lic_end (no live CME license): re-check the cost of that window,
+                # keep the cap, retry once. The bars are then delayed and the site marks them STALE by their age.
+                delayed_to = lic_end
+                params = delayed_params(root)
+                store = client.timeseries.get_range(**params)
             df = store.to_df()
             bars, dropped = frame_to_bars(df, symbol)
         except Exception as exc:  # noqa: BLE001
@@ -193,5 +233,7 @@ def run(
         "cost_usd": round(total, 6),
     }
     data_as_of = min(latest + timedelta(hours=1), now)
+    if delayed_to is not None:
+        source = f"{source}; delayed: Databento license covers data up to {delayed_to:%Y-%m-%dT%H:%MZ} (no live CME license)"
     envelope = make_envelope(DATASET_NAME, source, status, errors, data, data_as_of, now)
     return publish(DATASET_NAME, source, envelope, out, previous, now)

@@ -19,3 +19,6 @@
 - Flatten banner is anchored to the CME trade date: between 15:10 and 17:00 CT it breaches; at 17:00 it rolls to the next day.
 - CME website (www.cmegroup.com) blocks GitHub Actions IPs (Akamai 403) and its Data Terms of Use prohibit automated access.
   Do not scrape it. Official rules PDFs must be downloaded by a human in a browser (ADR-007).
+- Databento without a live CME license: GLBX.MDP3 ranges ending in the last ~8h fail with 422 dataset_unavailable_range
+  ("Try again with an end time before …"). fetch_bars retries once at that licensed end (cost re-checked, cap kept);
+  bars are then ~8h old and the site shows them STALE. Green bars need a live CME license on the Databento account.
