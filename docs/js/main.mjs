@@ -1,7 +1,7 @@
 // WP-UI entry point: load via io, build the view model, render, wire forms. No inline handlers (CSP).
 // Robustness contract: whatever fails, the page shows a visible error panel, never a blank page.
 
-import { DATASETS, loadEnvelope, loadStatic, parseContractsFile, parseRulesFile } from './io/data.mjs';
+import { DATASETS, loadEnvelope, loadStatic, parseContractsFile, validateRulesFile } from './io/data.mjs';
 import { loadSheet } from './io/sheet.mjs';
 import { loadSettings, loadSizerForm, sanitizeSettings, sanitizeSizerForm, saveSettings, saveSizerForm } from './io/settings.mjs';
 import { renderApp, renderFatal } from './ui/render.mjs';
@@ -25,6 +25,9 @@ const state = {
   envs: { bars: null, settlements: null, margins: null, challenge: null, calendar: null },
   /** @type {Partial<Record<string, string>>} */
   loadErrors: {},
+  /** rules.json values of the wrong type (treated as UNKNOWN). */
+  /** @type {string[]} */
+  ruleErrors: [],
   /** @type {SheetResult|null} */
   sheet: null,
   /** URL the current `sheet` came from (last good data is kept only for the same URL). */
@@ -65,6 +68,7 @@ function render() {
       settings: state.settings,
       sizerForm: state.sizerForm,
       loadErrors: state.loadErrors,
+      ruleErrors: state.ruleErrors,
       loadedAtMs: state.loadedAtMs,
     });
     markup = renderApp(vm);
@@ -132,9 +136,15 @@ async function loadAll() {
     ]);
     /** @type {Partial<Record<string, string>>} */
     const errs = {};
-    const rf = rules.json === null ? null : parseRulesFile(rules.json);
-    if (rf) state.rules = rf;
-    else if (!state.rules || rules.error === null) state.rules = null;
+    const rv = rules.json === null ? null : validateRulesFile(rules.json);
+    const rf = rv ? rv.rules : null;
+    if (rf) {
+      state.rules = rf;
+      state.ruleErrors = rv ? rv.errors : [];
+    } else if (!state.rules || rules.error === null) {
+      state.rules = null;
+      state.ruleErrors = [];
+    }
     if (!rf) errs.rules = rules.error ?? 'rules.json has an unexpected shape';
     const cf = contracts.json === null ? null : parseContractsFile(contracts.json);
     if (cf) state.contracts = cf;

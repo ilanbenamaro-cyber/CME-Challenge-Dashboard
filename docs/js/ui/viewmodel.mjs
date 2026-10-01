@@ -47,6 +47,7 @@ import { ctDate, ctParts, daysBetween, tradeDate, weekdayOf } from '../core/time
  * @property {SizerForm} sizerForm
  * @property {Partial<Record<string, string>>} [loadErrors]  io error text per dataset / 'rules' / 'contracts'
  * @property {number|null} [loadedAtMs]           when data was last loaded
+ * @property {string[]} [ruleErrors]              rules.json values of the wrong type (now null/UNKNOWN), from validateRulesFile
  */
 
 /**
@@ -1364,6 +1365,16 @@ function buildBanners(inp, ctx, account, positions) {
   if (inp.rules === null) {
     out.push({ level: 'warn', kind: 'rules', title: 'Rules UNAVAILABLE', message: `rules.json failed to load (${inp.loadErrors?.rules ?? 'invalid'}) — every rule is UNKNOWN`, details: [] });
   } else {
+    const bad = inp.ruleErrors ?? [];
+    if (bad.length > 0) {
+      out.push({
+        level: 'warn',
+        kind: 'rules',
+        title: `rules.json: ${bad.length} invalid value${bad.length === 1 ? '' : 's'}`,
+        message: 'Wrongly typed values are treated as UNKNOWN, never coerced — fix docs/data/rules.json',
+        details: bad.slice(0, 8).concat(bad.length > 8 ? [`…and ${bad.length - 8} more`] : []),
+      });
+    }
     const unk = unknownRules(ctx.rs);
     if (unk.length > 0) {
       out.push({ level: 'warn', kind: 'rules', title: `${unk.length} rules UNKNOWN`, message: `${unk.length} rules UNKNOWN — fill plan/RULES.md → rules.json`, details: unk });

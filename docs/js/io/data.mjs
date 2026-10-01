@@ -92,29 +92,121 @@ export async function loadStatic(name) {
   return { json: error === null ? json : null, error };
 }
 
+/** @param {unknown} v @returns {boolean} */
+const isPosNum = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+/** @param {unknown} v @returns {boolean} */
+const isStr = (v) => typeof v === 'string';
+/** @param {unknown} v @returns {boolean} */
+const isMultiplier = (v) => v === null || (typeof v === 'number' && Number.isFinite(v) && v > 0);
+
 /**
- * Validate the rules file shape (pure). Values are NOT defaulted: a malformed rule entry becomes
- * `{value: null}` so it renders UNKNOWN.
+ * Expected type of each rule value (plan/schemas/rules.schema.json). null is always allowed (UNKNOWN).
+ * hold_margin_multipliers is checked member by member below.
+ * @type {Record<string, {want: string, ok: (v: unknown) => boolean}>}
+ */
+const RULE_TYPES = {
+  starting_balance_usd: { want: 'a number > 0', ok: isPosNum },
+  daily_loss_cap_usd: { want: 'a number > 0', ok: isPosNum },
+  max_drawdown_usd: { want: 'a number > 0', ok: isPosNum },
+  max_contracts: { want: 'a whole number >= 1', ok: (v) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 1 },
+  micro_to_standard_ratio: { want: 'a number > 0', ok: isPosNum },
+  flatten_time_ct: { want: 'a "HH:MM" string', ok: (v) => isStr(v) && /^([01]\d|2[0-3]):[0-5]\d$/.test(/** @type {string} */ (v)) },
+  margin_basis: { want: '"initial" or "maintenance"', ok: (v) => v === 'initial' || v === 'maintenance' },
+  allowed_roots: {
+    want: 'an array of root strings like "ES"',
+    ok: (v) => Array.isArray(v) && v.every((x) => isStr(x) && /^[A-Z0-9]{1,4}$/.test(x)),
+  },
+  challenge_start_date: { want: 'a string', ok: isStr },
+  challenge_end_date: { want: 'a string', ok: isStr },
+};
+const HOLD_KEYS = ['intraday', 'overnight', 'weekend'];
+
+/**
+ * @param {unknown} v
+ * @returns {string}
+ */
+function shown(v) {
+  try {
+    const t = JSON.stringify(v);
+    return t === undefined ? String(v) : t.length > 40 ? `${t.slice(0, 40)}…` : t;
+  } catch {
+    return String(v);
+  }
+}
+
+/**
+ * Validate the rules file (pure). Values are NOT defaulted or coerced: a malformed entry or a value of the
+ * wrong type becomes `{value: null}` (UNKNOWN) and is listed in `errors`. Unknown keys are dropped and listed.
+ * @param {unknown} json
+ * @returns {{rules: RulesFile|null, errors: string[]}}
+ */
+export function validateRulesFile(json) {
+  if (!isObj(json) || json.schema_version !== 1 || !isObj(json.rules)) return { rules: null, errors: ['rules.json has an unexpected shape'] };
+  /** @type {string[]} */
+  const errors = [];
+  /** @type {Record<string, unknown>} */
+  const rules = {};
+  for (const [k, v] of Object.entries(json.rules)) {
+    const spec = RULE_TYPES[k];
+    if (!spec && k !== 'hold_margin_multipliers') {
+      errors.push(`${k}: not a known rule (ignored)`);
+      continue;
+    }
+    if (!isObj(v) || !('value' in v)) {
+      errors.push(`${k}: entry must be an object with "value" and "source"; treated as UNKNOWN`);
+      rules[k] = { value: null, source: null };
+      continue;
+    }
+    let source = v.source ?? null;
+    if (source !== null && !isStr(source)) {
+      errors.push(`${k}.source: expected a string or null, got ${shown(source)}`);
+      source = null;
+    }
+    /** @type {unknown} */
+    let value = v.value ?? null;
+    if (value !== null && k === 'hold_margin_multipliers') {
+      if (!isObj(value)) {
+        errors.push(`${k}: expected an object {intraday, overnight, weekend}, got ${shown(value)}; treated as UNKNOWN`);
+        value = null;
+      } else {
+        const src = value;
+        /** @type {Record<string, number|null>} */
+        const out = {};
+        for (const h of HOLD_KEYS) {
+          const m = src[h] ?? null;
+          if (isMultiplier(m)) out[h] = /** @type {number|null} */ (m);
+          else {
+            errors.push(`${k}.${h}: expected a number > 0 or null, got ${shown(m)}; treated as UNKNOWN`);
+            out[h] = null;
+          }
+        }
+        for (const extra of Object.keys(src).filter((x) => !HOLD_KEYS.includes(x))) errors.push(`${k}.${extra}: not a known hold (ignored)`);
+        value = out;
+      }
+    } else if (value !== null && spec && !spec.ok(value)) {
+      errors.push(`${k}: expected ${spec.want}, got ${shown(value)}; treated as UNKNOWN`);
+      value = null;
+    }
+    rules[k] = { value, source };
+  }
+  return {
+    rules: /** @type {RulesFile} */ (/** @type {unknown} */ ({
+      schema_version: 1,
+      updated_at: typeof json.updated_at === 'string' ? json.updated_at : '',
+      source_doc: typeof json.source_doc === 'string' ? json.source_doc : '',
+      rules,
+    })),
+    errors,
+  };
+}
+
+/**
+ * Validate the rules file shape (pure). Same as `validateRulesFile(json).rules`.
  * @param {unknown} json
  * @returns {RulesFile|null}
  */
 export function parseRulesFile(json) {
-  if (!isObj(json) || json.schema_version !== 1 || !isObj(json.rules)) return null;
-  /** @type {Record<string, unknown>} */
-  const rules = {};
-  for (const [k, v] of Object.entries(json.rules)) {
-    if (isObj(v) && 'value' in v) {
-      rules[k] = { value: v.value ?? null, source: typeof v.source === 'string' ? v.source : null };
-    } else {
-      rules[k] = { value: null, source: null };
-    }
-  }
-  return /** @type {RulesFile} */ (/** @type {unknown} */ ({
-    schema_version: 1,
-    updated_at: typeof json.updated_at === 'string' ? json.updated_at : '',
-    source_doc: typeof json.source_doc === 'string' ? json.source_doc : '',
-    rules,
-  }));
+  return validateRulesFile(json).rules;
 }
 
 /**
