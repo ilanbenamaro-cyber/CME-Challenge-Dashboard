@@ -52,17 +52,45 @@ def window(now: datetime) -> tuple[datetime, datetime]:
 
 
 _LICENSE_END_RE = re.compile(r"dataset_unavailable_range.*?end time before (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})", re.S)
+_AVAILABLE_END_RE = re.compile(r"data_end_after_available_end.*?available up to '(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})", re.S)
+
+
+def _floor_hour(t: datetime) -> datetime:
+    return t.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
 
 
 def licensed_end(exc: BaseException) -> datetime | None:
-    """If Databento refused the range because the account's license only covers data up to some time
-    (422 dataset_unavailable_range, e.g. no live CME license -> data delayed), return that time floored
-    to the hour (UTC). Otherwise None."""
-    m = _LICENSE_END_RE.search(str(exc))
+    """If Databento refused a request because data is only available up to some time, return that time floored
+    to the hour (UTC); otherwise None. Two 422s carry it:
+      - dataset_unavailable_range: the account's license ends earlier (no live CME license -> ~8h delay);
+      - data_end_after_available_end: the dataset itself is only published up to that time."""
+    text = str(exc)
+    m = _LICENSE_END_RE.search(text) or _AVAILABLE_END_RE.search(text)
     if not m:
         return None
-    t = datetime.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
-    return t.replace(minute=0, second=0, microsecond=0)
+    t = datetime.strptime(m.group(1).replace(" ", "T"), "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    return _floor_hour(t)
+
+
+def entitled_end(client: Any) -> datetime | None:
+    """Latest time the account may request for the bars schema (metadata.get_dataset_range is documented as
+    'the available range for the dataset given the user's entitlements'; metadata calls are free). Floored to
+    the hour. None if the call fails or the shape is unexpected: the 422 fallbacks still apply."""
+    try:
+        r = client.metadata.get_dataset_range(dataset=DB_DATASET)
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(r, dict):
+        return None
+    sch = r.get("schema")
+    raw = sch.get(DB_SCHEMA, {}).get("end") if isinstance(sch, dict) and isinstance(sch.get(DB_SCHEMA), dict) else None
+    raw = raw or r.get("end")
+    t = _parse_t(raw) if isinstance(raw, str) else None
+    if t is None:
+        return None
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return _floor_hour(t)
 
 
 def _parse_t(t: Any) -> datetime | None:
@@ -194,6 +222,12 @@ def run(
     roots = config.parent_roots(contracts)
     start, end = window(now)
     errors: list[str] = []
+    window_end = end
+    # Never ask past what the account may receive: clamp to the entitled end before any quote (fixes both
+    # 422 dataset_unavailable_range and 422 data_end_after_available_end on the cost check).
+    avail = entitled_end(client)
+    if avail is not None and avail < end:
+        end = avail
 
     # 1) Project the cost of every request before spending anything.
     planned: list[tuple[str, dict, float]] = []
@@ -207,7 +241,18 @@ def run(
             continue
         params = request_params(root, root_start, end)
         try:
-            cost = _num(client.metadata.get_cost(**params))
+            try:
+                cost = _num(client.metadata.get_cost(**params))
+            except Exception as exc:  # noqa: BLE001
+                lic = licensed_end(exc)
+                if lic is None or lic >= end:
+                    raise
+                end = lic  # applies to this and every later root
+                if root_start >= end:
+                    unchanged.append(root)
+                    continue
+                params = request_params(root, root_start, end)
+                cost = _num(client.metadata.get_cost(**params))
             log_cost("quote", params, cost)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{root}: cost check failed: {safe_error(exc, [key])}")
@@ -257,16 +302,34 @@ def run(
         total += cost
         return p, cost
 
+    def requote(root: str, w_end: datetime) -> tuple[dict, float]:
+        """Re-quote a root planned before the window end was clamped (A10: cost before every range)."""
+        nonlocal total
+        p_start = incremental_start(previous_bars(previous, root), start)
+        if p_start >= w_end:
+            raise _NothingNew()
+        p = request_params(root, p_start, w_end)
+        cost = _num(client.metadata.get_cost(**p))
+        log_cost("quote (clamped window)", p, cost)
+        if cost is None or cost < 0 or total + cost > COST_CAP_USD:
+            raise RuntimeError("cost check for the clamped window failed or exceeds the cost cap")
+        total += cost
+        return p, cost
+
+    end_str = request_params("X", start, end)["end"]
     for root, params, quote in planned:
         symbol = symbol_for(root)
         try:
             if delayed_to is not None:
                 params, quote = delayed_params(root)
+            elif params["end"] != end_str:
+                params, quote = requote(root, end)
             try:
                 store = client.timeseries.get_range(**params)
             except Exception as exc:  # noqa: BLE001
                 lic_end = licensed_end(exc)
-                if lic_end is None or delayed_to is not None or lic_end >= end:
+                req_end = _parse_t(params["end"])
+                if lic_end is None or delayed_to is not None or req_end is None or lic_end >= req_end:
                     raise
                 # License only covers data up to lic_end (no live CME license): re-check the cost of that window,
                 # keep the cap, retry once. The bars are then delayed and the site marks them STALE by their age.
@@ -307,7 +370,8 @@ def run(
         "cost_usd": round(billed, 6),
     }
     data_as_of = min(latest + timedelta(hours=1), now)
-    if delayed_to is not None:
-        source = f"{source}; delayed: Databento license covers data up to {delayed_to:%Y-%m-%dT%H:%MZ} (no live CME license)"
+    data_end = delayed_to if delayed_to is not None else end
+    if data_end < window_end:
+        source = f"{source}; delayed: Databento data available to this account up to {data_end:%Y-%m-%dT%H:%MZ}"
     envelope = make_envelope(DATASET_NAME, source, status, errors, data, data_as_of, now)
     return publish(DATASET_NAME, source, envelope, out, previous, now)

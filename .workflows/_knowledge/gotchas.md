@@ -25,3 +25,6 @@
 - Databento cost (measured 2026-10-01, Actions log): incremental licensed-window bar fetch ≈ $0.00001 per root per run.
   Quotes for the live window (refused with 422 when unlicensed) are over-estimated and never billed; cost_usd in bars.json
   counts billed requests only. Per-request quotes are logged to stderr in the refresh run.
+- Databento 422 data_end_after_available_end: the dataset is published with a lag, so a quote ending at the current
+  hour can be refused on the cost check itself. fetch_bars clamps the window to metadata.get_dataset_range (the
+  account's entitled range, free) before any quote, and still parses both 422 texts as a fallback.
