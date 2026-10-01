@@ -2,8 +2,8 @@
 // Every displayable value carries its level/state; unknown values carry UNKNOWN_TEXT, never a number.
 
 import { atr, lastClose } from '../core/atr.mjs';
-import { dailyNetByTradeDate, reconcile } from '../core/book.mjs';
-import { dailyLossMeter, drawdownMeter, marginMeter, WARN_RATIO } from '../core/compliance.mjs';
+import { contractsTradedOn, dailyNetByTradeDate, reconcile } from '../core/book.mjs';
+import { dailyLossMeter, drawdownMeter, marginMeter, minContractsMeter, pctCapCents, WARN_RATIO } from '../core/compliance.mjs';
 import { barsRootFor, resolveSpec, standardEquivalent } from '../core/contracts.mjs';
 import { expiryBanner, nextExpiration } from '../core/expiry.mjs';
 import { flattenBanner } from '../core/flatten.mjs';
@@ -14,7 +14,7 @@ import { tradePnlCents, usdToCents } from '../core/money.mjs';
 import { ruleValue } from '../core/rules.mjs';
 import { DAILY_ROW_PREFIX, TRADES_ROW_PREFIX } from '../io/sheet.mjs';
 import { sizePosition } from '../core/sizer.mjs';
-import { ctDate, ctParts, daysBetween, tradeDate, weekdayOf } from '../core/time.mjs';
+import { addDays, ctDate, ctParts, daysBetween, prevWeekday, tradeDate, weekdayOf } from '../core/time.mjs';
 
 /** @typedef {import('../core/types.mjs').Level} Level */
 /** @typedef {import('../core/types.mjs').FreshState} FreshState */
@@ -81,15 +81,21 @@ import { ctDate, ctParts, daysBetween, tradeDate, weekdayOf } from '../core/time
  */
 
 /**
+ * Display level: a core Level, or 'na' for "not a rule in this challenge" (ADR-008; neutral, never UNKNOWN).
+ * @typedef {Level|'na'} UiLevel
+ */
+
+/**
  * @typedef {object} MeterVM
  * @property {string} key
  * @property {string} label
- * @property {Level} level
- * @property {string} pct_text
- * @property {number|null} fill   0..100 in steps of 5, null when unknown
+ * @property {UiLevel} level
+ * @property {string} pct_text     ratio ("42%"), or "traded / required" for the contracts meter
+ * @property {number|null} fill   0..100 in steps of 5, null when unknown / not applicable
  * @property {string} used_text
  * @property {string} limit_text
  * @property {string} remaining_text
+ * @property {{used: string, limit: string, left: string}} labels  captions of the three numbers
  * @property {string} note
  * @property {string|null} badge  STALE/PARTIAL marker (with age) when an input dataset is not fresh
  */
@@ -123,6 +129,7 @@ import { ctDate, ctParts, daysBetween, tradeDate, weekdayOf } from '../core/time
  * @property {boolean} known
  * @property {string} reason
  * @property {PositionRow[]} rows
+ * @property {string} std_label    caption of std_equiv ("Standard-equivalent open / max", or "Contracts open" without a cap)
  * @property {Cell} std_equiv
  * @property {string|null} badge   STALE marker when the Sheet data behind the list is not fresh
  */
@@ -143,6 +150,8 @@ import { ctDate, ctParts, daysBetween, tradeDate, weekdayOf } from '../core/time
  * @property {Cell} atr
  * @property {string[]} reasons
  * @property {string[]} warnings
+ * @property {string} fee_note        set when the fee was defaulted from the commission rule
+ * @property {string} fee_placeholder placeholder of the (blank) fee field
  * @property {string|null} badge   STALE/PARTIAL marker (with age) when an input dataset is not fresh
  */
 
@@ -217,7 +226,7 @@ import { ctDate, ctParts, daysBetween, tradeDate, weekdayOf } from '../core/time
  * @property {CalendarVM|null} calendar
  * @property {ReconVM|null} recon
  * @property {{sheet_url: string, watched_roots_text: string, expiry_warn_days: number, sheet_configured: boolean}} settings
- * @property {{unknown: string[], source_doc: string, updated_at: string}} rulesInfo
+ * @property {{unknown: string[], na: string[], source_doc: string, updated_at: string}} rulesInfo
  * @property {Record<string, string>} sectionErrors  section name -> error text when that section failed to build
  */
 
@@ -228,8 +237,31 @@ const DATASETS = ['bars', 'settlements', 'margins', 'challenge', 'calendar'];
 export const RULE_KEYS = [
   'starting_balance_usd', 'daily_loss_cap_usd', 'max_drawdown_usd', 'max_contracts', 'micro_to_standard_ratio',
   'flatten_time_ct', 'hold_margin_multipliers', 'margin_basis', 'allowed_roots', 'challenge_start_date',
-  'challenge_end_date',
+  'challenge_end_date', 'daily_loss_cap_pct', 'flatten_dates', 'min_contracts_per_day', 'commission_per_side_usd',
 ];
+
+/**
+ * Optional keys (ADR-008). Absent from a rules file = not part of that rule set: not UNKNOWN, no panel.
+ * Present with a null value (and not applies:false) = UNKNOWN like any other rule.
+ * @type {Set<keyof RuleSet>}
+ */
+const OPTIONAL_RULE_KEYS = new Set(/** @type {(keyof RuleSet)[]} */ (['daily_loss_cap_pct', 'flatten_dates', 'min_contracts_per_day', 'commission_per_side_usd']));
+
+/**
+ * True if the rule set has an entry for `key` (an optional key may be absent).
+ * @param {RuleSet|null} rs
+ * @param {keyof RuleSet} key
+ * @returns {boolean}
+ */
+function hasRule(rs, key) {
+  return rs !== null && typeof rs === 'object' && Object.prototype.hasOwnProperty.call(rs, key);
+}
+
+/** Penalty text for missing the daily contract minimum (RULES.md p9/p10; quoted in rules.json min_contracts_per_day.source). */
+const MIN_CONTRACTS_PENALTY = '$1,000 penalty';
+
+/** CT hour from which a shortfall against the daily contract minimum raises an amber banner. */
+export const MIN_CONTRACTS_WARN_HOUR_CT = 14;
 
 /** Sheet data counts as fresh for this long after a successful fetch. */
 export const SHEET_FRESH_MIN = 15;
@@ -725,14 +757,14 @@ function holdMultiplier(ctx) {
  * @returns {Money}
  */
 function computeMoney(ctx) {
-  const sheetWhy = ctx.fr.sheet.state === 'missing' ? 'Sheet not loaded' : `Sheet ${ctx.fr.sheet.state}: ${ctx.fr.sheet.reason}`;
+  const sheetWhyText = sheetWhy(ctx);
   // Realized today + all closed trades.
   let realized = /** @type {number|null} */ (null);
   let realizedReason = '';
   let closedTotal = /** @type {number|null} */ (null);
   let closedReason = '';
   if (ctx.trades === null) {
-    realizedReason = closedReason = sheetWhy;
+    realizedReason = closedReason = sheetWhyText;
   } else if (ctx.tradeRowErrors.length > 0) {
     realizedReason = closedReason = `${ctx.tradeRowErrors.length} invalid Trades row(s) in the Sheet`;
   } else {
@@ -788,7 +820,7 @@ function computeMoney(ctx) {
   const dailyBad = (ctx.sheet?.rowErrors ?? []).filter((e) => e.startsWith(DAILY_ROW_PREFIX)).length;
   const noBalance = (daily ?? []).filter((d) => !isNum(d.reported_balance_usd)).map((d) => d.date);
   if (start === null) peakReason = 'starting_balance_usd rule UNKNOWN';
-  else if (daily === null) peakReason = `peak UNKNOWN: ${sheetWhy}`;
+  else if (daily === null) peakReason = `peak UNKNOWN: ${sheetWhyText}`;
   else if (dailyBad > 0) peakReason = `peak UNKNOWN: ${dailyBad} invalid Daily row${dailyBad === 1 ? '' : 's'} in the Sheet`;
   else if (noBalance.length > 0) {
     peakReason = `peak UNKNOWN: Daily ${noBalance.slice(0, 3).join(', ')}${noBalance.length > 3 ? ' …' : ''} has no reported balance`;
@@ -842,8 +874,172 @@ function meterVM(m, key, label, note, badge) {
     used_text: fmtUsd(m.used_cents),
     limit_text: fmtUsd(m.limit_cents),
     remaining_text: fmtUsd(m.remaining_cents),
+    labels: USD_LABELS,
     note: m.level === 'unknown' && m.reason ? `${note}${note ? ' · ' : ''}${m.reason}` : note,
     badge,
+  };
+}
+
+const USD_LABELS = { used: 'used', limit: 'limit', left: 'left' };
+
+/**
+ * A meter for a rule that is not part of this challenge (ADR-008): neutral, no numbers, never UNKNOWN.
+ * @param {string} key
+ * @param {string} label
+ * @param {string} note
+ * @returns {MeterVM}
+ */
+function naMeter(key, label, note) {
+  return { key, label, level: 'na', pct_text: 'n/a', fill: null, used_text: '', limit_text: '', remaining_text: '', labels: USD_LABELS, note, badge: null };
+}
+
+/**
+ * Why Sheet-derived values are unavailable.
+ * @param {Ctx} ctx
+ * @returns {string}
+ */
+function sheetWhy(ctx) {
+  return ctx.fr.sheet.state === 'missing' ? 'Sheet not loaded' : `Sheet ${ctx.fr.sheet.state}: ${ctx.fr.sheet.reason}`;
+}
+
+/**
+ * First CME trade date of the challenge: challenge_start_date rolled forward off a weekend (a Sunday-evening
+ * start belongs to Monday's trade date). null if the rule is unknown or malformed.
+ * @param {RuleSet|null} rs
+ * @returns {string|null}
+ */
+function firstTradeDate(rs) {
+  const r = ruleValue(rs, 'challenge_start_date');
+  if (!r.known || typeof r.value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(r.value)) return null;
+  try {
+    let d = r.value;
+    while (weekdayOf(d) === 0 || weekdayOf(d) === 6) d = addDays(d, 1);
+    return d;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True if trade date `td` lies inside the challenge window (first trade date .. challenge_end_date).
+ * false when either end is unknown.
+ * @param {Ctx} ctx
+ * @returns {boolean}
+ */
+function inChallengeWindow(ctx) {
+  const first = firstTradeDate(ctx.rs);
+  const end = ruleValue(ctx.rs, 'challenge_end_date');
+  return first !== null && end.known && typeof end.value === 'string' && ctx.td >= first && ctx.td <= end.value;
+}
+
+/**
+ * Base of the percentage daily-loss cap (ADR-008): the prior trade date's closing balance from the Sheet Daily tab
+ * (latest row dated before today's trade date with a reported balance). No Daily row before today -> the starting
+ * balance. UNKNOWN when the Sheet is not loaded, a Daily row was rejected, or the prior close is missing.
+ * @param {Ctx} ctx
+ * @returns {{cents: number|null, text: string, reason: string}}
+ */
+function priorCloseBase(ctx) {
+  const data = ctx.sheet?.data ?? null;
+  if (data === null) return { cents: null, text: '', reason: sheetWhy(ctx) };
+  const dailyBad = (ctx.sheet?.rowErrors ?? []).filter((e) => e.startsWith(DAILY_ROW_PREFIX)).length;
+  if (dailyBad > 0) return { cents: null, text: '', reason: `${dailyBad} invalid Daily row${dailyBad === 1 ? '' : 's'} in the Sheet` };
+  const prior = data.daily
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d.date) && d.date < ctx.td)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  if (prior.length === 0) {
+    const sb = ruleValue(ctx.rs, 'starting_balance_usd');
+    if (!sb.known) return { cents: null, text: '', reason: 'no Daily close yet and starting_balance_usd rule UNKNOWN' };
+    const cents = usdToCents(sb.value);
+    return { cents, text: `${fmtUsd(cents)} (starting balance; no Daily close yet)`, reason: '' };
+  }
+  const withBal = prior.filter((d) => isNum(d.reported_balance_usd));
+  const last = withBal[withBal.length - 1];
+  if (!last) {
+    const latest = prior[prior.length - 1];
+    return { cents: null, text: '', reason: `Daily close for ${latest ? latest.date : '?'} has no reported balance` };
+  }
+  const expected = prevWeekday(ctx.td);
+  const first = firstTradeDate(ctx.rs);
+  // Unknown start date: check anyway (a missing close shows UNKNOWN rather than an old balance).
+  if (last.date < expected && (first === null || ctx.td > first)) {
+    return { cents: null, text: '', reason: `Daily close for ${expected} missing` };
+  }
+  const cents = usdToCents(/** @type {number} */ (last.reported_balance_usd));
+  return { cents, text: `prior close ${fmtUsd(cents)}`, reason: '' };
+}
+
+/**
+ * The daily-loss cap the meter uses: the fixed-dollar rule, or (when that rule does not apply) the percentage rule
+ * on the prior close. `override` is passed to core dailyLossMeter (undefined = use daily_loss_cap_usd).
+ * @param {Ctx} ctx
+ * @returns {{na: boolean, override: number|null|undefined, label: string, note: string, reason: string}}
+ */
+function dailyLossCap(ctx) {
+  const assume = 'assumes loss = −(realized today + open P&L since entry)';
+  const usd = ruleValue(ctx.rs, 'daily_loss_cap_usd');
+  if (usd.known || !usd.na) {
+    return { na: false, override: undefined, label: 'Daily loss vs cap', note: `${assume}; confirm against RULES.md`, reason: '' };
+  }
+  const pct = ruleValue(ctx.rs, 'daily_loss_cap_pct');
+  if (!pct.known && pct.na) return { na: true, override: undefined, label: 'Daily loss', note: 'No daily loss rule in this challenge', reason: '' };
+  if (!pct.known) return { na: false, override: null, label: 'Daily loss vs % lock', note: assume, reason: `daily loss cap UNKNOWN: ${pct.reason}` };
+  const pctText = `${Number((pct.value * 100).toFixed(4))}%`;
+  const label = `Daily loss vs ${pctText} lock`;
+  const base = priorCloseBase(ctx);
+  if (base.cents === null) return { na: false, override: null, label, note: assume, reason: `cap base UNKNOWN: ${base.reason}` };
+  const cap = pctCapCents(ctx.rs, base.cents);
+  if (cap === null) return { na: false, override: null, label, note: assume, reason: `cap UNKNOWN: ${pctText} of ${base.text} is not a positive amount` };
+  return { na: false, override: cap, label, note: `${pctText} of ${base.text} = cap ${fmtUsd(cap)} · ${assume}`, reason: '' };
+}
+
+/**
+ * Contracts traded today vs the daily minimum (ADR-008). null when the rule set has no min_contracts_per_day entry.
+ * @param {Ctx} ctx
+ * @returns {{vm: MeterVM, traded: number|null, required: number|null, remaining: number|null}|null}
+ */
+function contractsToday(ctx) {
+  if (!hasRule(ctx.rs, 'min_contracts_per_day')) return null;
+  /** @type {number|null} */
+  let traded = null;
+  let why = '';
+  if (ctx.trades === null) why = sheetWhy(ctx);
+  else if (ctx.tradeRowErrors.length > 0) {
+    const n = ctx.tradeRowErrors.length;
+    why = `${n} invalid Trades row${n === 1 ? '' : 's'} in the Sheet`;
+  } else {
+    traded = contractsTradedOn(ctx.trades, ctx.td);
+    if (traded === null) why = 'a trade time cannot be parsed';
+  }
+  const m = minContractsMeter(traded, ctx.rs);
+  const label = 'Contracts traded today';
+  if (m.level === 'na') return { vm: naMeter('min_contracts', label, 'No daily contract minimum in this challenge'), traded: null, required: null, remaining: null };
+  const t = m.traded;
+  const req = m.required;
+  const known = m.level !== 'unknown' && t !== null && req !== null;
+  const ratio = known && t !== null && req !== null ? (req > 0 ? t / req : 1) : null;
+  let note = '';
+  if (m.level === 'unknown') note = why || m.reason;
+  else if (m.level === 'warn') note = `${m.remaining} more needed — ${MIN_CONTRACTS_PENALTY} if under ${req} by the close`;
+  else note = `daily minimum of ${req} met`;
+  note += ` · entries + exits on trade date ${ctx.td}`;
+  return {
+    vm: {
+      key: 'min_contracts',
+      label,
+      level: m.level,
+      pct_text: known ? `${t} / ${req}` : UNKNOWN_TEXT,
+      fill: ratio === null ? null : Math.min(100, Math.max(0, Math.round((ratio * 100) / 5) * 5)),
+      used_text: t === null || m.level === 'unknown' ? UNKNOWN_TEXT : String(t),
+      limit_text: req === null ? UNKNOWN_TEXT : String(req),
+      remaining_text: m.remaining === null ? UNKNOWN_TEXT : String(m.remaining),
+      labels: { used: 'traded', limit: 'minimum', left: 'needed' },
+      note,
+      badge: inputsBadge(ctx, ['sheet']),
+    },
+    traded: known ? t : null,
+    required: req,
+    remaining: m.remaining,
   };
 }
 
@@ -869,15 +1065,26 @@ function buildAccount(ctx, money) {
   marginUsed.sign = null;
   marginUsed.badge = acctBadge;
 
+  const capInfo = dailyLossCap(ctx);
   /** @type {Meter} */
   let loss;
   if (money.realized === null) {
-    loss = dailyLossMeter(0, null, ctx.rs);
-    loss = { ...loss, level: 'unknown', used_cents: null, used_ratio: null, remaining_cents: null, reason: `today's realized P&L UNKNOWN (${money.realizedReason})` };
+    loss = dailyLossMeter(0, null, ctx.rs, capInfo.override);
+    const why = [`today's realized P&L UNKNOWN (${money.realizedReason})`];
+    if (capInfo.reason) why.push(capInfo.reason);
+    loss = { ...loss, level: 'unknown', used_cents: null, used_ratio: null, remaining_cents: null, reason: why.join('; ') };
   } else {
-    loss = dailyLossMeter(money.realized, money.open, ctx.rs);
-    if (loss.level === 'unknown' && money.open === null) loss = { ...loss, reason: `open P&L UNKNOWN (${money.openReason})` };
+    loss = dailyLossMeter(money.realized, money.open, ctx.rs, capInfo.override);
+    if (loss.level === 'unknown') {
+      /** @type {string[]} */
+      const why = [];
+      if (money.open === null) why.push(`open P&L UNKNOWN (${money.openReason})`);
+      if (capInfo.reason) why.push(capInfo.reason);
+      if (why.length > 0) loss = { ...loss, reason: why.join('; ') };
+    }
   }
+  const lossVM = capInfo.na ? naMeter('daily_loss', capInfo.label, capInfo.note) : meterVM(loss, 'daily_loss', capInfo.label, capInfo.note, acctBadge);
+  const ddRule = ruleValue(ctx.rs, 'max_drawdown_usd');
   let dd = drawdownMeter(money.equity, money.peak, ctx.rs);
   if (dd.level === 'unknown' && ruleValue(ctx.rs, 'max_drawdown_usd').known) {
     /** @type {string[]} */
@@ -892,6 +1099,7 @@ function buildAccount(ctx, money) {
       : money.equity === null ? `equity UNKNOWN (${money.equityReason})` : 'equity is not positive';
     mm = { ...mm, reason: why };
   }
+  const ct = contractsToday(ctx);
   return {
     realized,
     open,
@@ -900,9 +1108,12 @@ function buildAccount(ctx, money) {
     margin_used: marginUsed,
     trade_date: ctx.td,
     meters: [
-      meterVM(loss, 'daily_loss', 'Daily loss vs cap', 'assumes loss = −(realized today + open P&L since entry); confirm against RULES.md', acctBadge),
-      meterVM(dd, 'drawdown', 'Drawdown vs max', 'assumes EOD trailing: peak = max(start, EOD balances)', acctBadge),
+      lossVM,
+      !ddRule.known && ddRule.na
+        ? naMeter('drawdown', 'Drawdown', 'No drawdown rule in this challenge')
+        : meterVM(dd, 'drawdown', 'Drawdown vs max', 'assumes EOD trailing: peak = max(start, EOD balances)', acctBadge),
       meterVM(mm, 'margin', 'Margin in use vs equity', `${ctx.form.hold} hold multiplier`, acctBadge),
+      ...(ct ? [ct.vm] : []),
     ],
   };
 }
@@ -915,9 +1126,12 @@ function buildPositions(ctx) {
   const ratioRule = ruleValue(ctx.rs, 'micro_to_standard_ratio');
   const maxRule = ruleValue(ctx.rs, 'max_contracts');
   const allowed = ruleValue(ctx.rs, 'allowed_roots');
+  // ADR-008: no contract-count rule -> show the open contract count, never "/ UNKNOWN".
+  const noCap = !maxRule.known && maxRule.na;
+  const stdLabel = noCap ? 'Contracts open' : 'Standard-equivalent open / max';
   if (ctx.open === null) {
     const why = ctx.trades === null ? ctx.fr.sheet.reason : ctx.openWhy;
-    return { known: false, reason: `Positions UNKNOWN — ${why}`, rows: [], std_equiv: unknownCell(why), badge: null };
+    return { known: false, reason: `Positions UNKNOWN — ${why}`, rows: [], std_label: stdLabel, std_equiv: unknownCell(why), badge: null };
   }
   /** @type {PositionRow[]} */
   const rows = ctx.open.map((t) => {
@@ -944,7 +1158,10 @@ function buildPositions(ctx) {
   const se = standardEquivalent(ctx.open.map((t) => ({ root: t.root, qty: t.qty })), ctx.contracts, ratioRule.known ? ratioRule.value : null);
   /** @type {Cell} */
   let std;
-  if (se === null) {
+  if (noCap) {
+    const count = ctx.open.reduce((n, t) => n + t.qty, 0);
+    std = cell({ text: `${count} contract${count === 1 ? '' : 's'}`, known: true, level: null, note: 'no contract cap (margin-limited)' });
+  } else if (se === null) {
     std = unknownCell(ratioRule.known ? 'an open root is not in contracts.json' : 'micro_to_standard_ratio rule UNKNOWN');
   } else if (!maxRule.known) {
     std = cell({ text: `${fmtQty(se)} / ${UNKNOWN_TEXT}`, known: true, level: 'unknown', note: 'max_contracts rule UNKNOWN' });
@@ -955,7 +1172,7 @@ function buildPositions(ctx) {
   }
   const badge = inputsBadge(ctx, ['sheet']);
   std.badge = badge;
-  return { known: true, reason: rows.length === 0 ? 'Flat — no open positions in the Sheet' : '', rows, std_equiv: std, badge };
+  return { known: true, reason: rows.length === 0 ? 'Flat — no open positions in the Sheet' : '', rows, std_label: stdLabel, std_equiv: std, badge };
 }
 
 /**
@@ -1030,6 +1247,20 @@ function buildSizer(ctx, money) {
   if (allowed.known && Array.isArray(allowed.value) && !allowed.value.includes(f.root)) warnings.push(`${f.root} is not in allowed_roots`);
   if (avail !== null && avail < 0) warnings.push('available margin is negative');
 
+  // ADR-008: a blank fee defaults to the round trip of the challenge commission (2 sides).
+  const commission = ruleValue(ctx.rs, 'commission_per_side_usd');
+  const sideCents = commission.known && isNum(commission.value) && commission.value >= 0 ? usdToCents(commission.value) : null;
+  let fee = f.fee_per_contract_usd;
+  let feeNote = '';
+  if (fee === null && sideCents !== null) {
+    fee = (2 * sideCents) / 100;
+    feeNote = `fee defaulted from ${fmtUsd(sideCents)}/side commission (${fmtUsd(2 * sideCents)} round trip)`;
+  }
+  const feePlaceholder = sideCents === null ? '0 if none' : `${(2 * sideCents) / 100} (2 × commission)`;
+  const maxRule = ruleValue(ctx.rs, 'max_contracts');
+  const maxNA = !maxRule.known && maxRule.na;
+  const MAX_NA_TEXT = 'n/a (margin-limited)';
+
   const base = {
     form: f,
     roots,
@@ -1039,6 +1270,8 @@ function buildSizer(ctx, money) {
     multiplier_text: mult === null ? UNKNOWN_TEXT : `×${mult}`,
     atr: atrCell(ctx, f.root),
     warnings,
+    fee_note: feeNote,
+    fee_placeholder: feePlaceholder,
     badge,
   };
   /** @type {string[]} */
@@ -1046,12 +1279,12 @@ function buildSizer(ctx, money) {
   if (!spec) inputProblems.push(`${f.root} not in contracts.json`);
   if (!isNum(f.risk_budget_usd) || f.risk_budget_usd < 0) inputProblems.push('enter a risk budget (USD, ≥ 0)');
   if (!isNum(f.stop_ticks) || !Number.isInteger(f.stop_ticks) || f.stop_ticks <= 0) inputProblems.push('enter the stop distance in whole ticks (> 0)');
-  if (!isNum(f.fee_per_contract_usd) || f.fee_per_contract_usd < 0) inputProblems.push('enter the round-turn fee per contract (USD, 0 if none)');
+  if (!isNum(fee) || fee < 0) inputProblems.push('enter the round-turn fee per contract (USD, 0 if none)');
   if (!ctx.rs) inputProblems.push('rules.json unavailable');
   const unknownLimits = [
     { key: /** @type {const} */ ('risk'), label: 'Risk', text: UNKNOWN_TEXT, binding: false },
     { key: /** @type {const} */ ('margin'), label: 'Margin', text: UNKNOWN_TEXT, binding: false },
-    { key: /** @type {const} */ ('max_contracts'), label: 'Max contracts', text: UNKNOWN_TEXT, binding: false },
+    { key: /** @type {const} */ ('max_contracts'), label: 'Max contracts', text: maxNA ? MAX_NA_TEXT : UNKNOWN_TEXT, binding: false },
   ];
   if (inputProblems.length > 0 || !spec || !ctx.rs) {
     return { ...base, status: 'unknown', level: 'unknown', contracts_text: UNKNOWN_TEXT, binding_text: '', limits: unknownLimits, reasons: inputProblems };
@@ -1060,7 +1293,7 @@ function buildSizer(ctx, money) {
     spec,
     risk_budget_usd: /** @type {number} */ (f.risk_budget_usd),
     stop_ticks: /** @type {number} */ (f.stop_ticks),
-    fee_per_contract_usd: /** @type {number} */ (f.fee_per_contract_usd),
+    fee_per_contract_usd: /** @type {number} */ (fee),
     available_margin_usd: avail === null ? null : Math.max(0, avail) / 100,
     margin_per_contract_usd: margin.known ? resolveMargin(f.root, ctx.basis, ctx.cmeRows, ctx.cmeFresh, ctx.sheetMargins).value_usd : null,
     hold: f.hold,
@@ -1079,7 +1312,7 @@ function buildSizer(ctx, money) {
     return {
       key,
       label: key === 'max_contracts' ? 'Max contracts' : key === 'risk' ? 'Risk' : 'Margin',
-      text: v === null ? UNKNOWN_TEXT : String(v),
+      text: key === 'max_contracts' && maxNA ? MAX_NA_TEXT : v === null ? UNKNOWN_TEXT : String(v),
       binding: res.binding === key,
     };
   });
@@ -1280,7 +1513,8 @@ const DATA_IMPACT = {
 };
 
 /**
- * Rules that are unknown (including individual hold multipliers).
+ * Rules that are unknown (including individual hold multipliers). Not-applicable rules (applies:false) and
+ * optional keys absent from the file are not unknown.
  * @param {RuleSet|null} rs
  * @returns {string[]}
  */
@@ -1288,14 +1522,29 @@ function unknownRules(rs) {
   /** @type {string[]} */
   const out = [];
   for (const k of RULE_KEYS) {
+    if (OPTIONAL_RULE_KEYS.has(k) && !hasRule(rs, k)) continue;
     const r = ruleValue(rs, k);
-    if (!r.known) out.push(k);
+    if (!r.known) {
+      if (!r.na) out.push(k);
+    }
     else if (k === 'hold_margin_multipliers') {
       const v = /** @type {Record<string, unknown>} */ (r.value);
       for (const h of HOLDS) if (!isNum(v[h])) out.push(`${k}.${h}`);
     }
   }
   return out;
+}
+
+/**
+ * Rules marked applies:false ("not a rule in this challenge").
+ * @param {RuleSet|null} rs
+ * @returns {string[]}
+ */
+function naRules(rs) {
+  return RULE_KEYS.filter((k) => {
+    const r = ruleValue(rs, k);
+    return !r.known && r.na;
+  });
 }
 
 /**
@@ -1314,7 +1563,12 @@ function buildBanners(inp, ctx, account, positions) {
   const positionsUnknown = ctx.open === null;
   const hasOpen = ctx.open !== null && ctx.open.length > 0;
   const fb = flattenBanner(ctx.now, ctx.rs, positionsUnknown ? true : hasOpen);
-  if (positionsUnknown) {
+  const fd = ruleValue(ctx.rs, 'flatten_dates');
+  // ADR-008: not a flatten day -> a calm info line, whatever the positions (they do not matter today).
+  const noFlattenToday = fb.level === 'ok' && fb.value === null && fd.known && Array.isArray(fd.value) && !fd.value.includes(ctx.td);
+  if (noFlattenToday) {
+    out.push({ level: 'ok', kind: 'flatten', title: 'Flatten', message: fb.message, details: [] });
+  } else if (positionsUnknown) {
     const why = ctx.trades === null ? 'open positions UNKNOWN (Sheet unavailable)' : ctx.openWhy;
     out.push({ level: 'unknown', kind: 'flatten', title: 'Flatten', message: `${fb.message} — ${why}`, details: [] });
   } else {
@@ -1333,9 +1587,21 @@ function buildBanners(inp, ctx, account, positions) {
 
   // Limits (meters and position count) that need action.
   for (const m of account?.meters ?? []) {
+    if (m.key === 'min_contracts') continue; // own, time-gated banner below
     if (m.level === 'breach' || m.level === 'warn') {
       out.push({ level: m.level, kind: 'limit', title: m.label, message: `${m.pct_text} used — ${m.used_text} of ${m.limit_text}, ${m.remaining_text} left`, details: [] });
     }
+  }
+  // Daily contract minimum: amber once the afternoon is under way on a challenge trade date (ADR-008).
+  const ct = account?.meters.find((m) => m.key === 'min_contracts');
+  if (ct && ct.level === 'warn' && ctx.today === ctx.td && ctParts(ctx.now).hour >= MIN_CONTRACTS_WARN_HOUR_CT && inChallengeWindow(ctx)) {
+    out.push({
+      level: 'warn',
+      kind: 'limit',
+      title: 'Contracts traded today',
+      message: `${ct.pct_text} traded — ${ct.remaining_text} more needed; ${MIN_CONTRACTS_PENALTY} if under ${ct.limit_text} by the close`,
+      details: [],
+    });
   }
   if (positions && (positions.std_equiv.level === 'breach' || positions.std_equiv.level === 'warn')) {
     out.push({ level: positions.std_equiv.level, kind: 'limit', title: 'Contracts open', message: `${positions.std_equiv.text} standard-equivalent contracts`, details: [] });
@@ -1477,6 +1743,7 @@ export function buildViewModel(inputs) {
     },
     rulesInfo: {
       unknown: guard(errors, 'rules', () => unknownRules(ctx.rs)) ?? [],
+      na: guard(errors, 'rules', () => naRules(ctx.rs)) ?? [],
       source_doc: inputs.rules?.source_doc ?? 'plan/RULES.md',
       updated_at: inputs.rules?.updated_at ?? UNKNOWN_TEXT,
     },

@@ -16,9 +16,10 @@ import { CONT_LABEL } from './viewmodel.mjs';
 /** @typedef {import('./viewmodel.mjs').CalendarVM} CalendarVM */
 /** @typedef {import('./viewmodel.mjs').ReconVM} ReconVM */
 /** @typedef {import('../core/types.mjs').Level} Level */
+/** @typedef {import('./viewmodel.mjs').UiLevel} UiLevel */
 
 /** Build marker: the e2e smoke test reads this constant from disk and expects it in the served page. */
-export const BUILD_ID = 'wp-ui-2026-10-01.1';
+export const BUILD_ID = 'wp-ui-2026-10-01.2-utc';
 
 export { escapeHtml };
 
@@ -28,11 +29,12 @@ const LEVEL_UI = {
   warn: { icon: '▲', word: 'WARN' },
   breach: { icon: '✕', word: 'BREACH' },
   unknown: { icon: '?', word: 'UNKNOWN' },
+  na: { icon: '–', word: 'N/A' },
 };
 
 /**
- * Level pill: icon + text.
- * @param {Level} level
+ * Level pill: icon + text. 'na' = not a rule in this challenge (neutral).
+ * @param {UiLevel} level
  * @param {string} [text]
  * @returns {Raw}
  */
@@ -129,15 +131,21 @@ function errorPanel(live, title, msg) {
  * @returns {Raw}
  */
 function renderMeter(m) {
+  if (m.level === 'na') {
+    return html`<div class="meter meter-na" data-meter="${m.key}">
+  <div class="meter-head"><span class="meter-label">${m.label}</span>${levelPill('na', 'N/A')}</div>
+  <p class="note">${m.note}</p>
+</div>`;
+  }
   const fill = m.fill === null ? html`<div class="fill fill-unknown"></div>` : html`<div class="fill fill-${m.level} f-${m.fill}"></div>`;
   return html`<div class="meter meter-${m.level}" data-meter="${m.key}">
   <div class="meter-head"><span class="meter-label">${m.label}</span>${levelPill(m.level, m.level === 'unknown' ? 'UNKNOWN' : `${LEVEL_UI[m.level].word} ${m.pct_text}`)}${
     m.badge ? html` <span class="badge">${m.badge}</span>` : ''}</div>
   <div class="bar" role="img" aria-label="${m.label}: ${m.pct_text}">${fill}</div>
   <dl class="meter-nums">
-    <div><dt>used</dt><dd>${m.used_text}</dd></div>
-    <div><dt>limit</dt><dd>${m.limit_text}</dd></div>
-    <div><dt>left</dt><dd>${m.remaining_text}</dd></div>
+    <div><dt>${m.labels.used}</dt><dd>${m.used_text}</dd></div>
+    <div><dt>${m.labels.limit}</dt><dd>${m.limit_text}</dd></div>
+    <div><dt>${m.labels.left}</dt><dd>${m.remaining_text}</dd></div>
   </dl>
   ${m.note ? html`<p class="note">${m.note}</p>` : ''}
 </div>`;
@@ -193,8 +201,8 @@ export function renderPositions(vm) {
 <p class="note">Mark = last 1h close of the ${CONT_LABEL} series; during the roll it may not be the contract month you hold.</p>`;
   return html`<section class="panel" id="p-positions" data-live="positions">
   <h2>Positions${p.badge ? html` <span class="badge">${p.badge}</span>` : ''}</h2>
-  <div class="pos-summary"><span class="kpi-label">Standard-equivalent open / max</span> ${
-    p.std_equiv.level ? levelPill(p.std_equiv.level, p.std_equiv.text) : renderCell(p.std_equiv)}<span class="note">${p.std_equiv.note}</span></div>
+  <div class="pos-summary"><span class="kpi-label">${p.std_label}</span> ${
+    p.std_equiv.level ? levelPill(p.std_equiv.level, p.std_equiv.text) : renderCell(p.std_equiv, { noNote: true })}<span class="note">${p.std_equiv.note}</span></div>
   ${body}
 </section>`;
 }
@@ -225,7 +233,7 @@ export function renderSizerForm(s) {
   <label class="field"><span>Root</span><select name="root">${s.roots.map((r) => html`<option value="${r}"${r === f.root ? html` selected` : ''}>${r}</option>`)}</select></label>
   <label class="field"><span>Risk budget $</span><input name="risk_budget_usd" type="number" inputmode="decimal" min="0" step="any" value="${numVal(f.risk_budget_usd)}" placeholder="e.g. 250"></label>
   <label class="field"><span>Stop (ticks)</span><input name="stop_ticks" type="number" inputmode="numeric" min="1" step="1" value="${numVal(f.stop_ticks)}" placeholder="e.g. 16"></label>
-  <label class="field"><span>Fee / contract RT $</span><input name="fee_per_contract_usd" type="number" inputmode="decimal" min="0" step="any" value="${numVal(f.fee_per_contract_usd)}" placeholder="0 if none"></label>
+  <label class="field"><span>Fee / contract RT $</span><input name="fee_per_contract_usd" type="number" inputmode="decimal" min="0" step="any" value="${numVal(f.fee_per_contract_usd)}" placeholder="${s.fee_placeholder}"></label>
   <fieldset class="field seg"><legend>Hold</legend><div class="seg-row">${HOLD_OPTIONS.map((h) => html`<label class="seg-opt"><input type="radio" name="hold" value="${h.value}"${h.value === f.hold ? html` checked` : ''}><span>${h.label}</span></label>`)}</div></fieldset>
 </form>`;
 }
@@ -252,6 +260,7 @@ export function renderSizerResult(vm) {
     <tr><th>Available margin</th><td class="num">${renderCell(s.available)}</td></tr>
     <tr><th>Stop hint ATR(14)</th><td class="num">${renderCell(s.atr)}</td></tr>
   </tbody></table>
+  ${s.fee_note ? html`<p class="note fee-note">${s.fee_note}</p>` : ''}
   ${s.reasons.length > 0 ? html`<ul class="reasons">${s.reasons.map((r) => html`<li>${r}</li>`)}</ul>` : ''}
   ${s.warnings.length > 0 ? html`<ul class="reasons reasons-warn">${s.warnings.map((r) => html`<li>${levelPill('warn')} ${r}</li>`)}</ul>` : ''}
 </div>`;
@@ -371,6 +380,7 @@ export function renderRulesInfo(vm) {
   <p class="note">Source: ${r.source_doc} · rules.json updated ${r.updated_at}. Rules are never inferred.</p>
   ${r.unknown.length === 0 ? html`<p>${levelPill('ok', 'All rules known')}</p>`
     : html`<p>${levelPill('unknown', `${r.unknown.length} UNKNOWN`)}</p><ul class="rule-list">${r.unknown.map((k) => html`<li class="mono">${k}</li>`)}</ul>`}
+  ${r.na.length > 0 ? html`<p class="note">${levelPill('na', 'N/A')} Not rules in this challenge: <span class="mono">${r.na.join(', ')}</span></p>` : ''}
 </div>`;
 }
 
