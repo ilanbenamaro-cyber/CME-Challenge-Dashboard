@@ -69,6 +69,7 @@ import { addDays, ctDate, ctParts, daysBetween, prevWeekday, tradeDate, weekdayO
  * @property {string} age_text
  * @property {string} reason
  * @property {string} source
+ * @property {boolean} [off]   dataset intentionally has no source (ADR-007): grey "OFF", never amber
  */
 
 /**
@@ -270,6 +271,20 @@ export const SHEET_FRESH_MIN = 15;
 const HOLDS = ['intraday', 'overnight', 'weekend'];
 
 const LEVEL_RANK = { breach: 0, warn: 1, unknown: 2, ok: 3 };
+
+/** Error text a job writes when its source is intentionally unset (jobs/config/sources.json, ADR-007). */
+export const SOURCE_OFF_PREFIX = 'source not configured';
+
+/**
+ * True when an envelope's only problem is that its source is intentionally switched off: shown as a calm grey
+ * "OFF" (still UNKNOWN data), not as an amber failure that trains the user to ignore banners.
+ * @param {AnyEnvelope|null|undefined} env
+ * @returns {boolean}
+ */
+export function isSourceOff(env) {
+  return !!env && env.status === 'error' && Array.isArray(env.errors) && env.errors.length > 0
+    && env.errors.every((/** @type {unknown} */ e) => typeof e === 'string' && e.startsWith(SOURCE_OFF_PREFIX));
+}
 
 /**
  * Display level of a freshness state.
@@ -1616,6 +1631,10 @@ function buildBanners(inp, ctx, account, positions) {
   for (const name of [...DATASETS, /** @type {const} */ ('sheet')]) {
     const f = ctx.fr[name];
     if (f.state === 'fresh') continue;
+    if (name !== 'sheet' && isSourceOff(ctx.envs[name])) {
+      out.push({ level: 'unknown', kind: 'data', title: `${name} OFF`, message: `no permitted automated source (ADR-007) — ${DATA_IMPACT[name]}`, details: [] });
+      continue;
+    }
     const age = f.age_min === null ? '' : ` (${fmtAge(f.age_min)} old)`;
     out.push({
       level: freshLevel(f.state),
@@ -1712,10 +1731,12 @@ export function buildViewModel(inputs) {
   const chips = [...DATASETS, /** @type {const} */ ('sheet')].map((name) => {
     const f = ctx.fr[name];
     const env = name === 'sheet' ? null : ctx.envs[name];
+    const off = name !== 'sheet' && isSourceOff(env);
     return {
       name,
       state: f.state,
-      level: freshLevel(f.state),
+      off,
+      level: off ? 'unknown' : freshLevel(f.state),
       age_text: fmtAge(f.age_min),
       reason: f.reason,
       source: name === 'sheet' ? 'Google Sheet (Apps Script)' : env?.source ?? `data/${name}.json`,

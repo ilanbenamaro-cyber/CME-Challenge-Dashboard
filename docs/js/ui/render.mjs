@@ -63,7 +63,7 @@ export function renderCell(c, opt = {}) {
 function renderChip(c) {
   const u = LEVEL_UI[c.level];
   const title = `${c.name}: ${c.state}${c.age_text ? `, ${c.age_text} old` : ''} — ${c.reason} · ${c.source}`;
-  return html`<li class="chip chip-${c.level}" title="${title}"><span class="ico" aria-hidden="true">${u.icon}</span><span class="chip-name">${c.name}</span> <span class="chip-state">${c.state.toUpperCase()}</span>${
+  return html`<li class="chip chip-${c.level}" title="${title}"><span class="ico" aria-hidden="true">${u.icon}</span><span class="chip-name">${c.name}</span> <span class="chip-state">${c.off ? 'OFF' : c.state.toUpperCase()}</span>${
     c.age_text ? html` <span class="chip-age">${c.age_text}</span>` : ''}</li>`;
 }
 
