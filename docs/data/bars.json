@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "dataset": "bars",
-  "generated_at": "2026-10-04T12:15:25Z",
+  "generated_at": "2026-10-04T17:32:22Z",
   "data_as_of": "2026-10-02T21:00:00Z",
-  "source": "Databento GLBX.MDP3 ohlcv-1h (stype_in=continuous, <ROOT>.c.0); delayed: Databento data available to this account up to 2026-10-04T04:00Z",
+  "source": "Databento GLBX.MDP3 ohlcv-1h (stype_in=continuous, <ROOT>.c.0); delayed: Databento data available to this account up to 2026-10-04T09:00Z",
   "status": "ok",
   "errors": [],
   "data": {
