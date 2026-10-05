@@ -151,6 +151,27 @@ function isoTimeMs(t) {
   return Number.isFinite(ms) ? ms : null;
 }
 
+/** Exact contract code: root + CME month code + 2-digit year, e.g. HOZ26, MESZ26 (ADR-010). */
+export const CONTRACT_RE = /^[A-Z0-9]{1,4}[FGHJKMNQUVXZ]\d{2}$/;
+
+/**
+ * Optional `contract` cell. Blank/absent → null (older rows lack it; the position's mark is then UNKNOWN,
+ * not a row error). Otherwise trimmed + uppercased; it must be the row's root followed by month code + YY.
+ * @param {unknown} v
+ * @param {string} root  the row's root, uppercased
+ * @returns {{ok: true, code: string}|{ok: false, reason: string}|null}
+ */
+function normContract(v, root) {
+  const raw = cellText(v);
+  if (raw === null) return null;
+  const code = raw.toUpperCase();
+  if (!CONTRACT_RE.test(code)) return { ok: false, reason: `contract ${code} is not a contract code like ${root}Z26 (root + month code + 2-digit year)` };
+  if (!code.startsWith(root) || !/^[FGHJKMNQUVXZ]\d{2}$/.test(code.slice(root.length))) {
+    return { ok: false, reason: `contract ${code} does not match root ${root}` };
+  }
+  return { ok: true, code };
+}
+
 /**
  * Normalise one Trades row. Returns the Trade or a reason string.
  * @param {Record<string, unknown>} r
@@ -181,6 +202,8 @@ function normTrade(r, nowMs) {
   if ((exit === null) !== (exitTime === null)) return 'exit and exit_time must both be blank (open) or both set';
   if (exitMs !== null && exitMs < entryMs) return 'exit_time is before entry_time';
   if (exitMs !== null && nowMs !== null && exitMs > nowMs + FUTURE_SKEW_MS) return 'exit_time is in the future';
+  const contract = normContract(r.contract, root.toUpperCase());
+  if (contract !== null && !contract.ok) return contract.reason;
   /** @type {Trade} */
   const t = {
     id: '',
@@ -192,6 +215,7 @@ function normTrade(r, nowMs) {
     entry_time: /** @type {string} */ (entryTime),
     exit_time: exitTime,
     fees_usd: fees,
+    contract: contract === null ? null : contract.code,
   };
   const notes = cellText(r.notes);
   if (notes !== null) t.notes = notes;

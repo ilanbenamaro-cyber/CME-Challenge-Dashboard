@@ -116,6 +116,7 @@ import { addDays, ctDate, ctParts, daysBetween, prevWeekday, tradeDate, weekdayO
  * @typedef {object} PositionRow
  * @property {string} id
  * @property {string} root
+ * @property {string} contract_text  exact contract held (e.g. "HOZ26"), or "<root> ?" when the row has none
  * @property {'long'|'short'} side
  * @property {number} qty
  * @property {string} entry_text
@@ -438,15 +439,11 @@ const DISPLAYABLE = new Set(['fresh', 'partial', 'stale', 'error']);
 // Defensive readers for envelope data (the files are bot-written but the site must not crash on them).
 
 /**
- * Bars for a bars-root, filtered to well-formed entries and sorted ascending by t.
- * @param {AnyEnvelope|null} env
- * @param {string} barsRoot
- * @returns {Bar[]|null} null if the envelope has no bars for this root
+ * Well-formed bars of one series entry ({bars: [...]}), sorted ascending by t; null if none.
+ * @param {unknown} entry
+ * @returns {Bar[]|null}
  */
-function barsOf(env, barsRoot) {
-  const d = env?.data;
-  if (!isObj(d) || !isObj(d.roots)) return null;
-  const entry = d.roots[barsRoot];
+function seriesBars(entry) {
   if (!isObj(entry) || !Array.isArray(entry.bars)) return null;
   /** @type {Bar[]} */
   const out = [];
@@ -457,6 +454,36 @@ function barsOf(env, barsRoot) {
   }
   out.sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : 0));
   return out.length > 0 ? out : null;
+}
+
+/**
+ * Front-month continuous bars for a bars-root (Markets panel only; never used to mark a position).
+ * @param {AnyEnvelope|null} env
+ * @param {string} barsRoot
+ * @returns {Bar[]|null} null if the envelope has no bars for this root
+ */
+function barsOf(env, barsRoot) {
+  const d = env?.data;
+  if (!isObj(d) || !isObj(d.roots)) return null;
+  return seriesBars(d.roots[barsRoot]);
+}
+
+/**
+ * One exact contract's series from bars.data.contracts (ADR-010), or null when absent or malformed.
+ * The series' root must be the expected bars root (a mislabelled series is not used).
+ * @param {AnyEnvelope|null} env
+ * @param {string} code      contract code, e.g. "HOZ26"
+ * @param {string} barsRoot  expected series root (parent for micros)
+ * @returns {{bars: Bar[], raw_symbol: string}|null}
+ */
+function contractSeriesOf(env, code, barsRoot) {
+  const d = env?.data;
+  if (!isObj(d) || !isObj(d.contracts)) return null;
+  const entry = d.contracts[code];
+  if (!isObj(entry) || entry.root !== barsRoot) return null;
+  const bars = seriesBars(entry);
+  if (!bars) return null;
+  return { bars, raw_symbol: typeof entry.raw_symbol === 'string' ? entry.raw_symbol : '' };
 }
 
 /**
@@ -647,7 +674,7 @@ function buildCtx(inp) {
   };
 }
 
-/** Label for any mark or last price taken from bars (P1-5: may differ from a held back month during the roll). */
+/** Label for a front-month last price (Markets panel; positions are marked by exact contract, ADR-010). */
 export const CONT_LABEL = 'front-month continuous (.c.0)';
 
 /** Duration of one bar in the bars envelope (1h bars; `t` is the bar's open time). */
@@ -678,59 +705,131 @@ function rootFreshness(ctx, last) {
 }
 
 /**
- * Mark price for a root from the bars envelope. Usable (for open P&L) only if both the envelope and the
- * root's own series are fresh (or the envelope partial); `fr` is the freshness the mark is shown with.
+ * @typedef {object} Mark
+ * @property {number|null} price
+ * @property {boolean} usable      true only when the price may be used for open P&L
+ * @property {Bar[]|null} bars
+ * @property {ContractSpec|null} spec
+ * @property {string} reason       why the mark is not usable ('' when usable)
+ * @property {Freshness} fr        freshness the mark is shown with
+ * @property {string} label        what the price is, e.g. "HOZ26 (HOZ6) bar close" or "ES.c.0 front-month continuous (.c.0)"
+ * @property {boolean} exact       true for an exact-contract mark (ADR-010)
+ */
+
+/**
+ * Mark from one bars series. Usable only if both the envelope and the series itself are fresh (or the
+ * envelope partial).
+ * @param {Ctx} ctx
+ * @param {ContractSpec} spec
+ * @param {Bar[]} bars  non-empty, ascending
+ * @param {string} name  series name for reasons, e.g. "HOZ26" or "ES"
+ * @param {string} label
+ * @param {boolean} exact
+ * @returns {Mark}
+ */
+function seriesMark(ctx, spec, bars, name, label, exact) {
+  const f = ctx.fr.bars;
+  const last = /** @type {Bar} */ (bars[bars.length - 1]);
+  const price = lastClose(bars);
+  const rf = rootFreshness(ctx, last);
+  if (rf.state !== 'fresh') {
+    // The series itself is older than the policy: show the worse (older) of the two ages.
+    const worse = (f.state === 'stale' || f.state === 'error') && (f.age_min ?? -1) >= (rf.age_min ?? -1) ? f : { ...rf, state: /** @type {FreshState} */ ('stale') };
+    return { price, usable: false, bars, spec, reason: `${name} bars ${worse.state.toUpperCase()} (last bar closed ${fmtAge(rf.age_min)} ago) — open P&L not marked`, fr: worse, label, exact };
+  }
+  const usable = f.state === 'fresh' || f.state === 'partial';
+  return { price, usable, bars, spec, reason: usable ? '' : `bars ${f.state.toUpperCase()} — open P&L not marked`, fr: f, label, exact };
+}
+
+/**
+ * Front-month continuous last price for a root (Markets panel and ATR only). Never marks a position (ADR-010).
  * @param {Ctx} ctx
  * @param {string} root
- * @returns {{price: number|null, usable: boolean, bars: Bar[]|null, spec: ContractSpec|null, reason: string, fr: Freshness, symbol: string}}
+ * @returns {Mark}
  */
 function markFor(ctx, root) {
   const f = ctx.fr.bars;
   const spec = resolveSpec(root, ctx.contracts);
-  if (!spec) return { price: null, usable: false, bars: null, spec: null, reason: `${root} not in contracts.json`, fr: f, symbol: '' };
+  if (!spec) return { price: null, usable: false, bars: null, spec: null, reason: `${root} not in contracts.json`, fr: f, label: CONT_LABEL, exact: false };
   const br = barsRootFor(root, ctx.contracts);
-  const symbol = br ? `${br}.c.0` : '';
-  if (!br || !DISPLAYABLE.has(f.state)) return { price: null, usable: false, bars: null, spec, reason: `bars ${f.state.toUpperCase()}`, fr: f, symbol };
+  const label = br ? `${br}.c.0 ${CONT_LABEL}` : CONT_LABEL;
+  if (!br || !DISPLAYABLE.has(f.state)) return { price: null, usable: false, bars: null, spec, reason: `bars ${f.state.toUpperCase()}`, fr: f, label, exact: false };
   const bars = barsOf(ctx.envs.bars, br);
-  const last = bars?.[bars.length - 1];
-  if (!bars || !last) return { price: null, usable: false, bars: null, spec, reason: `no bars for ${br}`, fr: f, symbol };
-  const price = lastClose(bars);
-  const rf = rootFreshness(ctx, last);
-  if (rf.state !== 'fresh') {
-    // The root's own series is older than the policy: show the worse (older) of the two ages.
-    const worse = (f.state === 'stale' || f.state === 'error') && (f.age_min ?? -1) >= (rf.age_min ?? -1) ? f : { ...rf, state: /** @type {FreshState} */ ('stale') };
-    return { price, usable: false, bars, spec, reason: `${br} bars ${worse.state.toUpperCase()} (last bar closed ${fmtAge(rf.age_min)} ago) — open P&L not marked`, fr: worse, symbol };
+  if (!bars) return { price: null, usable: false, bars: null, spec, reason: `no bars for ${br}`, fr: f, label, exact: false };
+  return seriesMark(ctx, spec, bars, br, label, false);
+}
+
+/** Months of each root the bars job publishes exact-contract series for (ADR-010: <ROOT>.c.0..c.2). */
+const CONTRACT_MONTHS_NOTE = 'bars cover the first 3 listed months';
+
+/**
+ * Bars contract code for a trade's contract: micros use their parent's contract (MESZ26 -> ESZ26).
+ * @param {string} contract  e.g. "MESZ26"
+ * @param {string} root      the trade's root, e.g. "MES"
+ * @param {string} barsRoot  e.g. "ES"
+ * @returns {string}
+ */
+export function barsContractCode(contract, root, barsRoot) {
+  return contract.startsWith(root) ? `${barsRoot}${contract.slice(root.length)}` : contract;
+}
+
+/**
+ * Mark for an open position from its own contract's bars only (ADR-010). No contract or no series -> UNKNOWN;
+ * never the front month.
+ * @param {Ctx} ctx
+ * @param {Trade} t
+ * @returns {Mark}
+ */
+function positionMark(ctx, t) {
+  const f = ctx.fr.bars;
+  const spec = resolveSpec(t.root, ctx.contracts);
+  const contract = t.contract ?? null;
+  const label = contract ?? `${t.root} (contract not set)`;
+  if (!spec) return { price: null, usable: false, bars: null, spec: null, reason: `${t.root} not in contracts.json`, fr: f, label, exact: true };
+  if (contract === null) {
+    return { price: null, usable: false, bars: null, spec, reason: `contract not set — add the contract (e.g. ${t.root}Z26) to this Trades row`, fr: f, label, exact: true };
   }
-  const usable = f.state === 'fresh' || f.state === 'partial';
-  return { price, usable, bars, spec, reason: usable ? '' : `bars ${f.state.toUpperCase()} — open P&L not marked`, fr: f, symbol };
+  const br = barsRootFor(t.root, ctx.contracts) ?? t.root;
+  const code = barsContractCode(contract, t.root, br);
+  if (!DISPLAYABLE.has(f.state)) return { price: null, usable: false, bars: null, spec, reason: `bars ${f.state.toUpperCase()}`, fr: f, label, exact: true };
+  const series = contractSeriesOf(ctx.envs.bars, code, br);
+  if (!series) {
+    const via = code === contract ? '' : `, which ${contract} is marked with`;
+    return { price: null, usable: false, bars: null, spec, reason: `no bars for ${code}${via} (${CONTRACT_MONTHS_NOTE})`, fr: f, label, exact: true };
+  }
+  const desc = `${code}${series.raw_symbol ? ` (${series.raw_symbol})` : ''} bar close`;
+  return seriesMark(ctx, spec, series.bars, code, code === contract ? desc : `${contract} via ${desc}`, true);
 }
 
 /**
  * Mark cell (price + STALE badge when the bars are stale).
  * @param {Ctx} ctx
- * @param {ReturnType<typeof markFor>} m
+ * @param {Mark} m
  * @returns {Cell}
  */
 function markCell(ctx, m) {
   if (m.price === null || !m.spec) return unknownCell(m.reason);
   const last = m.bars?.[m.bars.length - 1];
+  const when = last ? `${last.t.slice(0, 16).replace('T', ' ')}Z` : '';
   return cell({
     text: fmtPrice(m.price, m.spec.tick_size),
     known: true,
     badge: staleBadge(m.fr),
     level: m.usable ? null : 'warn',
-    note: last ? `last 1h close, bar ${last.t.slice(0, 16).replace('T', ' ')}Z · ${m.symbol ? `${m.symbol} ` : ''}${CONT_LABEL}` : CONT_LABEL,
+    note: m.exact
+      ? `${m.label}${when ? ` · last 1h bar ${when}` : ''}`
+      : when ? `last 1h close, bar ${when} · ${m.label}` : m.label,
   });
 }
 
 /**
- * Open P&L of one open trade in cents, or null with a reason.
+ * Open P&L of one open trade in cents (net of the row's fees, as for closed trades), or null with a reason.
  * @param {Ctx} ctx
  * @param {Trade} t
- * @returns {{cents: number|null, reason: string, mark: ReturnType<typeof markFor>}}
+ * @returns {{cents: number|null, reason: string, mark: Mark}}
  */
 function openPnl(ctx, t) {
-  const m = markFor(ctx, t.root);
+  const m = positionMark(ctx, t);
   if (!m.spec) return { cents: null, reason: m.reason, mark: m };
   if (!m.usable || m.price === null) return { cents: null, reason: m.reason || 'no mark', mark: m };
   try {
@@ -1070,7 +1169,7 @@ function buildAccount(ctx, money) {
   const acctBadge = accountBadge(ctx);
   const realized = usdCell(money.realized, money.realized === null ? money.realizedReason : `closed trades, trade date ${ctx.td}`);
   realized.badge = sheetBadge;
-  const open = usdCell(money.open, money.open === null ? money.openReason : ctx.open && ctx.open.length > 0 ? `marked at last 1h close, ${CONT_LABEL}` : 'flat');
+  const open = usdCell(money.open, money.open === null ? money.openReason : ctx.open && ctx.open.length > 0 ? 'each position marked at the last 1h close of its own contract' : 'flat');
   if (money.open !== null && ctx.open && ctx.open.length > 0) open.badge = acctBadge;
   const equity = usdCell(money.equity, money.equity === null ? money.equityReason : 'start + closed + open');
   equity.sign = null;
@@ -1163,6 +1262,7 @@ function buildPositions(ctx) {
     return {
       id: t.id,
       root: t.root,
+      contract_text: t.contract ?? `${t.root} ?`,
       side: t.side,
       qty: t.qty,
       entry_text: spec ? fmtPrice(t.entry, spec.tick_size) : String(t.entry),
