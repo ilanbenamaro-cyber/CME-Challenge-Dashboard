@@ -1,0 +1,29 @@
+{
+  "note": "Sub-cent tick values (ADR-009). Hand-computed: exact in 1/10,000 USD, rounded to cents half away from zero once per trade. P1/P2 are Ilan's first live rows (Sheet 2026-10-04).",
+  "pnl": [
+    {"id": "Q1", "trade": {"id":"1","root":"ZN","side":"long","qty":2,"entry":104.46875,"exit":104.484375,"entry_time":"2026-10-04T19:55:00-04:00","exit_time":"2026-10-04T19:59:05-04:00","fees_usd":10},
+     "calc": "104'150 -> 104'155: 6686 -> 6687 ticks (1/64); +1 x $15.625 x 2 = $31.25", "expect": {"gross_cents":3125,"fees_cents":1000,"net_cents":2125}},
+    {"id": "Q2", "trade": {"id":"2","root":"CL","side":"long","qty":2,"entry":89.22,"exit":89.20,"entry_time":"2026-10-04T19:56:32-04:00","exit_time":"2026-10-04T19:59:00-04:00","fees_usd":10},
+     "calc": "-2 ticks x $10 x 2 = -$40", "expect": {"gross_cents":-4000,"fees_cents":1000,"net_cents":-5000}},
+    {"id": "Q3", "trade": {"id":"Q3","root":"ZT","side":"long","qty":3,"entry":101.7890625,"exit":101.79296875,"entry_time":"2026-10-05T09:00:00-05:00","exit_time":"2026-10-05T10:00:00-05:00","fees_usd":0},
+     "calc": "101'252 -> 101'253: 26058 -> 26059 ticks (1/256); 3 x $7.8125 = $23.4375 -> 2343.75c -> 2344", "expect": {"gross_cents":2344,"fees_cents":0,"net_cents":2344}},
+    {"id": "Q4", "trade": {"id":"Q4","root":"ZT","side":"short","qty":1,"entry":101.7890625,"exit":101.79296875,"entry_time":"2026-10-05T09:00:00-05:00","exit_time":"2026-10-05T10:00:00-05:00","fees_usd":0},
+     "calc": "-781.25c -> -781", "expect": {"gross_cents":-781,"fees_cents":0,"net_cents":-781}},
+    {"id": "Q5", "trade": {"id":"Q5","root":"ZT","side":"long","qty":2,"entry":101.7890625,"exit":101.79296875,"entry_time":"2026-10-05T09:00:00-05:00","exit_time":"2026-10-05T10:00:00-05:00","fees_usd":0},
+     "calc": "1562.5c -> 1563 (half away from zero)", "expect": {"gross_cents":1563,"fees_cents":0,"net_cents":1563}},
+    {"id": "Q6", "trade": {"id":"Q6","root":"ZT","side":"short","qty":2,"entry":101.7890625,"exit":101.79296875,"entry_time":"2026-10-05T09:00:00-05:00","exit_time":"2026-10-05T10:00:00-05:00","fees_usd":0},
+     "calc": "-1562.5c -> -1563", "expect": {"gross_cents":-1563,"fees_cents":0,"net_cents":-1563}},
+    {"id": "Q7", "trade": {"id":"Q7","root":"HO","side":"long","qty":2,"entry":4.3875,"exit":4.39,"entry_time":"2026-10-05T09:00:00-05:00","exit_time":"2026-10-05T10:00:00-05:00","fees_usd":10},
+     "calc": "25 ticks x $4.20 x 2 = $210", "expect": {"gross_cents":21000,"fees_cents":1000,"net_cents":20000}},
+    {"id": "Q8", "trade": {"id":"Q8","root":"ZB","side":"short","qty":1,"entry":112.5,"exit":112.46875,"entry_time":"2026-10-05T09:00:00-05:00","exit_time":"2026-10-05T10:00:00-05:00","fees_usd":0},
+     "calc": "-1 tick (1/32), short -> +$31.25", "expect": {"gross_cents":3125,"fees_cents":0,"net_cents":3125}}
+  ],
+  "errors": [
+    {"id": "QE1", "trade": {"id":"QE1","root":"ZN","side":"long","qty":1,"entry":104.47,"exit":104.484375,"entry_time":"2026-10-05T09:00:00-05:00","exit_time":"2026-10-05T10:00:00-05:00","fees_usd":0}, "why": "104.47 not on the 1/64 grid"}
+  ],
+  "sizer": [
+    {"id": "QS1", "root": "ZT", "risk_budget_usd": 500, "stop_ticks": 3, "fee_per_contract_usd": 5, "available_margin_usd": 1000000, "margin_per_contract_usd": 2000, "hold": "intraday",
+     "calc": "stop 3 x $7.8125 = 2343.75c -> ceil 2344 + 500 = 2844; risk floor(50000/2844)=17; margin floor(100000000/200000)=500; utc2026 rules (no contract cap)",
+     "expect": {"status":"ok","contracts":17,"binding":"risk","per_contract_risk_cents":2844,"limits":{"risk":17,"margin":500,"max_contracts":null}}}
+  ]
+}

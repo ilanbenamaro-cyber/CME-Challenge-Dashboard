@@ -148,7 +148,7 @@
  * @property {'ok'|'unknown'|'zero'} status   zero = inputs known but no contract fits
  * @property {number|null} contracts          null iff status === 'unknown'
  * @property {'risk'|'margin'|'max_contracts'|null} binding  tightest limit; ties resolve risk > margin > max_contracts
- * @property {number} per_contract_risk_cents stop_ticks*tick_value_cents + fee cents
+ * @property {number} per_contract_risk_cents ceil(stop_ticks * tick value, in cents) + fee cents
  * @property {{risk: number|null, margin: number|null, max_contracts: number|null}} limits
  * @property {string[]} reasons               why unknown/zero; empty when ok
  */

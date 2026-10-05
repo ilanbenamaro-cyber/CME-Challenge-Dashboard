@@ -27,7 +27,8 @@ export const FIXTURE_RULES = parseRulesFile({
   source_doc: 'tests/golden/sizer.json#rules_fixture',
   rules: readJson('tests/golden/sizer.json').rules_fixture,
 });
-export const CALENDAR = readJson('docs/data/calendar.json');
+// Frozen copy (as of 2026-09-30, the fixture clock): the committed calendar.json moves forward as entries are added.
+export const CALENDAR = readJson('tests/js/ui/calendar.fixture.json');
 
 // Wed 2026-09-30 14:45 CDT (19:45Z): 25 min before the fixture flatten time 15:10 CT.
 export const NOW = Date.parse('2026-09-30T19:45:00Z');

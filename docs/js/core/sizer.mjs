@@ -1,7 +1,7 @@
 /** @typedef {import('./types.mjs').SizerInput} SizerInput */
 /** @typedef {import('./types.mjs').SizerResult} SizerResult */
 
-import { tickValueCents, usdToCents } from './money.mjs';
+import { MICROS_PER_USD, tickValueMicros, usdToCents } from './money.mjs';
 import { ruleValue } from './rules.mjs';
 
 /** @param {unknown} x @returns {x is number} */
@@ -41,7 +41,9 @@ export function sizePosition(input) {
   const reasons = [];
 
   // Risk limit: always computable once inputs validate.
-  const perContractRisk = input.stop_ticks * tickValueCents(spec) + usdToCents(input.fee_per_contract_usd);
+  // Stop risk rounded UP to whole cents (conservative for sub-cent tick values such as ZT $7.8125).
+  const stopRiskCents = Math.ceil((input.stop_ticks * tickValueMicros(spec)) / (MICROS_PER_USD / 100));
+  const perContractRisk = stopRiskCents + usdToCents(input.fee_per_contract_usd);
   const riskLimit = Math.floor(usdToCents(input.risk_budget_usd) / perContractRisk);
 
   // Margin limit.
