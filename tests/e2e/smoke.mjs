@@ -107,6 +107,8 @@ const FIXTURES = {
     { root: 'MES', initial_usd: 1650, maintenance_usd: 1500, as_of: '2026-09-29' },
   ] }, NOW - 50 * 60 * MIN, 'error'),
   'challenge.json': env('challenge', { rows: [{ date: '2026-09-28', account: 'e2e', pnl_usd: 17.5, balance_usd: 50017.5, rank: 41 }] }, NOW - 4 * 24 * 60 * MIN),
+  // Frozen calendar matching the fixed clock; the committed calendar.json moves forward as entries are added.
+  'calendar.json': JSON.parse(readFileSync(join(ROOT, 'tests/js/ui/calendar.fixture.json'), 'utf8')),
 };
 const XSS = '<script>alert(1)</script><img src=x onerror=alert(2)>';
 const SHEET = {

@@ -1,16 +1,71 @@
 {
   "schema_version": 1,
   "dataset": "calendar",
-  "generated_at": "2026-09-30T00:00:00Z",
-  "data_as_of": "2026-09-30T00:00:00Z",
+  "generated_at": "2026-10-05T00:00:00Z",
+  "data_as_of": "2026-10-05T00:00:00Z",
   "source": "human-curated (docs/data/calendar.json)",
   "status": "ok",
   "errors": [],
   "data": {
     "events": [
-      {"date": "2026-10-28", "time_ct": "13:00", "title": "FOMC statement", "impact": "high", "source": "federalreserve.gov FOMC calendar — UNVERIFIED by build session, confirm"},
-      {"date": "2026-12-09", "time_ct": "13:00", "title": "FOMC statement", "impact": "high", "source": "federalreserve.gov FOMC calendar — UNVERIFIED by build session, confirm"}
+      {
+        "date": "2026-10-28",
+        "time_ct": "13:00",
+        "title": "FOMC statement",
+        "impact": "high",
+        "source": "federalreserve.gov FOMC calendar \u2014 UNVERIFIED by build session, confirm"
+      },
+      {
+        "date": "2026-12-09",
+        "time_ct": "13:00",
+        "title": "FOMC statement",
+        "impact": "high",
+        "source": "federalreserve.gov FOMC calendar \u2014 UNVERIFIED by build session, confirm"
+      }
     ],
-    "expirations": []
+    "expirations": [
+      {
+        "root": "CL",
+        "contract_code": "CLX26",
+        "date": "2026-10-20",
+        "source": "NYMEX CL rule: trading ends 3 business days before the 25th of the prior month (4 if the 25th is not a business day). Computed 2026-10-05 \u2014 verify on the CME product calendar (Oct 25 is a Sunday)"
+      },
+      {
+        "root": "CL",
+        "contract_code": "CLZ26",
+        "date": "2026-11-20",
+        "source": "NYMEX CL rule: trading ends 3 business days before the 25th of the prior month (4 if the 25th is not a business day). Computed 2026-10-05 \u2014 verify on the CME product calendar"
+      },
+      {
+        "root": "HO",
+        "contract_code": "HOX26",
+        "date": "2026-10-30",
+        "source": "NYMEX HO rule: trading ends on the last business day of the prior month. Computed 2026-10-05 \u2014 verify on the CME product calendar"
+      },
+      {
+        "root": "HO",
+        "contract_code": "HOZ26",
+        "date": "2026-11-30",
+        "source": "NYMEX HO rule: trading ends on the last business day of the prior month. Computed 2026-10-05 \u2014 verify on the CME product calendar"
+      },
+      {
+        "root": "GC",
+        "contract_code": "GCZ26",
+        "date": "2026-11-30",
+        "source": "COMEX GC: First notice day (last business day of the prior month) \u2014 used instead of last trade date because delivery risk starts there. Computed 2026-10-05 \u2014 verify on the CME product calendar"
+      },
+      {
+        "root": "ZT",
+        "contract_code": "ZTZ26",
+        "date": "2026-11-30",
+        "source": "CBOT ZT: First notice day (last business day of the prior month) \u2014 used instead of last trade date because delivery risk starts there. Computed 2026-10-05 \u2014 verify on the CME product calendar"
+      },
+      {
+        "root": "ZN",
+        "contract_code": "ZNZ26",
+        "date": "2026-11-30",
+        "source": "CBOT ZN: First notice day (last business day of the prior month) \u2014 used instead of last trade date because delivery risk starts there. Computed 2026-10-05 \u2014 verify on the CME product calendar"
+      }
+    ]
   }
 }

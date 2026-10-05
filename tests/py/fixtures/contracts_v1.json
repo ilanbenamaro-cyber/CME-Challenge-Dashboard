@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "contracts": [
+    {"root": "ES",  "name": "E-mini S&P 500",        "tick_size": 0.25, "tick_value_usd": 12.5, "parent": null, "expiry_rule": "quarterly_third_friday", "months": "HMUZ", "source": "CME contract specs: $50 x index, tick 0.25 = $12.50"},
+    {"root": "MES", "name": "Micro E-mini S&P 500",  "tick_size": 0.25, "tick_value_usd": 1.25, "parent": "ES",  "expiry_rule": "quarterly_third_friday", "months": "HMUZ", "source": "CME contract specs: $5 x index, tick 0.25 = $1.25"},
+    {"root": "NQ",  "name": "E-mini Nasdaq-100",     "tick_size": 0.25, "tick_value_usd": 5.0,  "parent": null, "expiry_rule": "quarterly_third_friday", "months": "HMUZ", "source": "CME contract specs: $20 x index, tick 0.25 = $5.00"},
+    {"root": "MNQ", "name": "Micro E-mini Nasdaq-100","tick_size": 0.25, "tick_value_usd": 0.5,  "parent": "NQ",  "expiry_rule": "quarterly_third_friday", "months": "HMUZ", "source": "CME contract specs: $2 x index, tick 0.25 = $0.50"},
+    {"root": "CL",  "name": "Crude Oil",             "tick_size": 0.01, "tick_value_usd": 10.0, "parent": null, "expiry_rule": "manual", "months": "FGHJKMNQUVXZ", "source": "NYMEX specs: 1,000 bbl, tick $0.01 = $10.00"},
+    {"root": "MCL", "name": "Micro WTI Crude Oil",   "tick_size": 0.01, "tick_value_usd": 1.0,  "parent": "CL",  "expiry_rule": "manual", "months": "FGHJKMNQUVXZ", "source": "NYMEX specs: 100 bbl, tick $0.01 = $1.00"},
+    {"root": "GC",  "name": "Gold",                  "tick_size": 0.1,  "tick_value_usd": 10.0, "parent": null, "expiry_rule": "manual", "months": "GJMQVZ", "source": "COMEX specs: 100 troy oz, tick $0.10 = $10.00"},
+    {"root": "MGC", "name": "Micro Gold",            "tick_size": 0.1,  "tick_value_usd": 1.0,  "parent": "GC",  "expiry_rule": "manual", "months": "GJMQVZ", "source": "COMEX specs: 10 troy oz, tick $0.10 = $1.00"}
+  ]
+}

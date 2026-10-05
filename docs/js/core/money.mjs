@@ -28,17 +28,45 @@ export function priceToTicks(price, tickSize) {
   return ticks + 0; // normalise -0
 }
 
+/** Sub-cent money unit: 1/10,000 USD (hundredths of a cent). Treasury tick values ($7.8125, $15.625) are exact here. */
+export const MICROS_PER_USD = 10000;
+
 /**
- * USD per tick as integer cents (Math.round(tick_value_usd * 100)).
+ * USD per tick in 1/10,000 USD units (integer). Throws RangeError if the tick value is not a positive finite
+ * number or is not representable to 1/10,000 USD.
  * @param {ContractSpec} spec
  * @returns {number}
  */
-export function tickValueCents(spec) {
+export function tickValueMicros(spec) {
   const v = spec.tick_value_usd;
   if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) {
     throw new RangeError(`invalid tick value for ${spec.root}: ${String(v)}`);
   }
-  return Math.round(v * 100);
+  const m = Math.round(v * MICROS_PER_USD);
+  if (Math.abs(v * MICROS_PER_USD - m) > 1e-6) {
+    throw new RangeError(`tick value for ${spec.root} is not representable to 1/10,000 USD: ${v}`);
+  }
+  return m;
+}
+
+/**
+ * 1/10,000-USD units to integer cents, rounding half away from zero (once per trade).
+ * @param {number} micros integer
+ * @returns {number}
+ */
+export function microsToCents(micros) {
+  const sign = micros < 0 ? -1 : 1;
+  return (sign * Math.floor((Math.abs(micros) + 50) / 100)) + 0;
+}
+
+/**
+ * USD per tick as integer cents, rounded half away from zero. Display/back-compat only: P&L and sizing use
+ * tickValueMicros so sub-cent tick values (ZT $7.8125, ZN $15.625) stay exact.
+ * @param {ContractSpec} spec
+ * @returns {number}
+ */
+export function tickValueCents(spec) {
+  return microsToCents(tickValueMicros(spec));
 }
 
 /**
@@ -58,7 +86,8 @@ export function usdToCents(usd) {
 
 /**
  * P&L of a closed trade (or of an open trade marked at `markPrice`).
- * gross = (exitTicks - entryTicks) * tickValueCents * qty, negated for short.
+ * gross = (exitTicks - entryTicks) * tick value * qty, negated for short; computed exactly in 1/10,000 USD and
+ * rounded to cents (half away from zero) once per trade.
  * Throws RangeError on off-tick prices, qty not a positive integer, negative fees, or
  * spec.root !== trade.root. If trade.exit is null, `markPrice` is required (throws otherwise).
  * @param {Trade} trade
@@ -91,8 +120,9 @@ export function tradePnlCents(trade, spec, markPrice) {
   }
   const entryTicks = priceToTicks(trade.entry, spec.tick_size);
   const exitTicks = priceToTicks(exitPrice, spec.tick_size);
-  const raw = (exitTicks - entryTicks) * tickValueCents(spec) * trade.qty;
-  const gross = (trade.side === 'short' ? -raw : raw) + 0;
+  // Exact in 1/10,000 USD, rounded to cents once per trade (sub-cent tick values: ZT $7.8125, ZN $15.625).
+  const raw = (exitTicks - entryTicks) * tickValueMicros(spec) * trade.qty;
+  const gross = microsToCents(trade.side === 'short' ? -raw : raw);
   const fees = usdToCents(trade.fees_usd);
   return { gross_cents: gross, fees_cents: fees, net_cents: gross - fees };
 }

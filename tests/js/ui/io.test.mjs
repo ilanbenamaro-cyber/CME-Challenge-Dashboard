@@ -157,7 +157,7 @@ test('static files: committed rules/contracts/calendar parse', () => {
   assert.equal(rules.rules.daily_loss_cap_usd.value, null);
   const contracts = parseContractsFile(readJson('docs/data/contracts.json'));
   assert.ok(contracts);
-  assert.equal(contracts.contracts.length, 8);
+  assert.equal(contracts.contracts.length, readJson('docs/data/contracts.json').contracts.length, 'no contract dropped');
   assert.ok(asEnvelope(readJson('docs/data/calendar.json')));
   assert.equal(parseRulesFile({ schema_version: 1 }), null);
   assert.equal(parseContractsFile([]), null);

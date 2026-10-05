@@ -1,13 +1,165 @@
 {
   "schema_version": 1,
   "contracts": [
-    {"root": "ES",  "name": "E-mini S&P 500",        "tick_size": 0.25, "tick_value_usd": 12.5, "parent": null, "expiry_rule": "quarterly_third_friday", "months": "HMUZ", "source": "CME contract specs: $50 x index, tick 0.25 = $12.50"},
-    {"root": "MES", "name": "Micro E-mini S&P 500",  "tick_size": 0.25, "tick_value_usd": 1.25, "parent": "ES",  "expiry_rule": "quarterly_third_friday", "months": "HMUZ", "source": "CME contract specs: $5 x index, tick 0.25 = $1.25"},
-    {"root": "NQ",  "name": "E-mini Nasdaq-100",     "tick_size": 0.25, "tick_value_usd": 5.0,  "parent": null, "expiry_rule": "quarterly_third_friday", "months": "HMUZ", "source": "CME contract specs: $20 x index, tick 0.25 = $5.00"},
-    {"root": "MNQ", "name": "Micro E-mini Nasdaq-100","tick_size": 0.25, "tick_value_usd": 0.5,  "parent": "NQ",  "expiry_rule": "quarterly_third_friday", "months": "HMUZ", "source": "CME contract specs: $2 x index, tick 0.25 = $0.50"},
-    {"root": "CL",  "name": "Crude Oil",             "tick_size": 0.01, "tick_value_usd": 10.0, "parent": null, "expiry_rule": "manual", "months": "FGHJKMNQUVXZ", "source": "NYMEX specs: 1,000 bbl, tick $0.01 = $10.00"},
-    {"root": "MCL", "name": "Micro WTI Crude Oil",   "tick_size": 0.01, "tick_value_usd": 1.0,  "parent": "CL",  "expiry_rule": "manual", "months": "FGHJKMNQUVXZ", "source": "NYMEX specs: 100 bbl, tick $0.01 = $1.00"},
-    {"root": "GC",  "name": "Gold",                  "tick_size": 0.1,  "tick_value_usd": 10.0, "parent": null, "expiry_rule": "manual", "months": "GJMQVZ", "source": "COMEX specs: 100 troy oz, tick $0.10 = $10.00"},
-    {"root": "MGC", "name": "Micro Gold",            "tick_size": 0.1,  "tick_value_usd": 1.0,  "parent": "GC",  "expiry_rule": "manual", "months": "GJMQVZ", "source": "COMEX specs: 10 troy oz, tick $0.10 = $1.00"}
+    {
+      "root": "ES",
+      "name": "E-mini S&P 500",
+      "tick_size": 0.25,
+      "tick_value_usd": 12.5,
+      "parent": null,
+      "expiry_rule": "quarterly_third_friday",
+      "months": "HMUZ",
+      "source": "CME contract specs: $50 x index, tick 0.25 = $12.50"
+    },
+    {
+      "root": "MES",
+      "name": "Micro E-mini S&P 500",
+      "tick_size": 0.25,
+      "tick_value_usd": 1.25,
+      "parent": "ES",
+      "expiry_rule": "quarterly_third_friday",
+      "months": "HMUZ",
+      "source": "CME contract specs: $5 x index, tick 0.25 = $1.25"
+    },
+    {
+      "root": "NQ",
+      "name": "E-mini Nasdaq-100",
+      "tick_size": 0.25,
+      "tick_value_usd": 5.0,
+      "parent": null,
+      "expiry_rule": "quarterly_third_friday",
+      "months": "HMUZ",
+      "source": "CME contract specs: $20 x index, tick 0.25 = $5.00"
+    },
+    {
+      "root": "MNQ",
+      "name": "Micro E-mini Nasdaq-100",
+      "tick_size": 0.25,
+      "tick_value_usd": 0.5,
+      "parent": "NQ",
+      "expiry_rule": "quarterly_third_friday",
+      "months": "HMUZ",
+      "source": "CME contract specs: $2 x index, tick 0.25 = $0.50"
+    },
+    {
+      "root": "CL",
+      "name": "Crude Oil",
+      "tick_size": 0.01,
+      "tick_value_usd": 10.0,
+      "parent": null,
+      "expiry_rule": "manual",
+      "months": "FGHJKMNQUVXZ",
+      "source": "NYMEX specs: 1,000 bbl, tick $0.01 = $10.00"
+    },
+    {
+      "root": "MCL",
+      "name": "Micro WTI Crude Oil",
+      "tick_size": 0.01,
+      "tick_value_usd": 1.0,
+      "parent": "CL",
+      "expiry_rule": "manual",
+      "months": "FGHJKMNQUVXZ",
+      "source": "NYMEX specs: 100 bbl, tick $0.01 = $1.00"
+    },
+    {
+      "root": "GC",
+      "name": "Gold",
+      "tick_size": 0.1,
+      "tick_value_usd": 10.0,
+      "parent": null,
+      "expiry_rule": "manual",
+      "months": "GJMQVZ",
+      "source": "COMEX specs: 100 troy oz, tick $0.10 = $10.00"
+    },
+    {
+      "root": "MGC",
+      "name": "Micro Gold",
+      "tick_size": 0.1,
+      "tick_value_usd": 1.0,
+      "parent": "GC",
+      "expiry_rule": "manual",
+      "months": "GJMQVZ",
+      "source": "COMEX specs: 10 troy oz, tick $0.10 = $1.00"
+    },
+    {
+      "root": "ZT",
+      "name": "2-Year T-Note",
+      "tick_size": 0.00390625,
+      "tick_value_usd": 7.8125,
+      "parent": null,
+      "expiry_rule": "manual",
+      "months": "HMUZ",
+      "source": "CBOT specs: $200,000 face; tick 1/8 of 1/32 point = $7.8125"
+    },
+    {
+      "root": "ZF",
+      "name": "5-Year T-Note",
+      "tick_size": 0.0078125,
+      "tick_value_usd": 7.8125,
+      "parent": null,
+      "expiry_rule": "manual",
+      "months": "HMUZ",
+      "source": "CBOT specs: $100,000 face; tick 1/4 of 1/32 point = $7.8125"
+    },
+    {
+      "root": "ZN",
+      "name": "10-Year T-Note",
+      "tick_size": 0.015625,
+      "tick_value_usd": 15.625,
+      "parent": null,
+      "expiry_rule": "manual",
+      "months": "HMUZ",
+      "source": "CBOT specs: $100,000 face; tick 1/2 of 1/32 point = $15.625"
+    },
+    {
+      "root": "ZB",
+      "name": "U.S. Treasury Bond",
+      "tick_size": 0.03125,
+      "tick_value_usd": 31.25,
+      "parent": null,
+      "expiry_rule": "manual",
+      "months": "HMUZ",
+      "source": "CBOT specs: $100,000 face; tick 1/32 point = $31.25"
+    },
+    {
+      "root": "HO",
+      "name": "NY Harbor ULSD",
+      "tick_size": 0.0001,
+      "tick_value_usd": 4.2,
+      "parent": null,
+      "expiry_rule": "manual",
+      "months": "FGHJKMNQUVXZ",
+      "source": "NYMEX specs: 42,000 gal; tick $0.0001/gal = $4.20"
+    },
+    {
+      "root": "RB",
+      "name": "RBOB Gasoline",
+      "tick_size": 0.0001,
+      "tick_value_usd": 4.2,
+      "parent": null,
+      "expiry_rule": "manual",
+      "months": "FGHJKMNQUVXZ",
+      "source": "NYMEX specs: 42,000 gal; tick $0.0001/gal = $4.20"
+    },
+    {
+      "root": "NG",
+      "name": "Henry Hub Natural Gas",
+      "tick_size": 0.001,
+      "tick_value_usd": 10.0,
+      "parent": null,
+      "expiry_rule": "manual",
+      "months": "FGHJKMNQUVXZ",
+      "source": "NYMEX specs: 10,000 MMBtu; tick $0.001/MMBtu = $10.00"
+    },
+    {
+      "root": "SI",
+      "name": "Silver",
+      "tick_size": 0.005,
+      "tick_value_usd": 25.0,
+      "parent": null,
+      "expiry_rule": "manual",
+      "months": "FHKNUZ",
+      "source": "COMEX specs: 5,000 troy oz; tick $0.005/oz = $25.00"
+    }
   ]
 }

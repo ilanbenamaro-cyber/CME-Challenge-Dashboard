@@ -2,15 +2,131 @@
   "_comment": "SYNTHETIC fixture: invented shape and made-up margin amounts for parser tests and dry run. Not CME data; the real margins source and shape are UNVERIFIED.",
   "asOf": "2026-09-29",
   "rows": [
-    {"root": "ES", "exchange": "CME", "period": "DEC 26", "initial": "11,000", "maintenance": "10,000"},
-    {"root": "ES", "exchange": "CME", "period": "MAR 27", "initial": "11,500", "maintenance": "10,500"},
-    {"root": "MES", "exchange": "CME", "period": "DEC 26", "initial": "1,100", "maintenance": "1,000"},
-    {"root": "NQ", "exchange": "CME", "period": "DEC 26", "initial": "22,000", "maintenance": "20,000"},
-    {"root": "MNQ", "exchange": "CME", "period": "DEC 26", "initial": "2,200", "maintenance": "2,000"},
-    {"root": "CL", "exchange": "NYMEX", "period": "NOV 26", "initial": "$6,600.00", "maintenance": "$6,000.00"},
-    {"root": "MCL", "exchange": "NYMEX", "period": "NOV 26", "initial": "$660.00", "maintenance": "$600.00"},
-    {"root": "GC", "exchange": "COMEX", "period": "DEC 26", "initial": "9,900", "maintenance": "9,000"},
-    {"root": "MGC", "exchange": "COMEX", "period": "DEC 26", "initial": "990", "maintenance": "900"},
-    {"root": "ZZ", "exchange": "CBOT", "period": "DEC 26", "initial": "1,000", "maintenance": "900"}
+    {
+      "root": "ES",
+      "exchange": "CME",
+      "period": "DEC 26",
+      "initial": "11,000",
+      "maintenance": "10,000"
+    },
+    {
+      "root": "ES",
+      "exchange": "CME",
+      "period": "MAR 27",
+      "initial": "11,500",
+      "maintenance": "10,500"
+    },
+    {
+      "root": "MES",
+      "exchange": "CME",
+      "period": "DEC 26",
+      "initial": "1,100",
+      "maintenance": "1,000"
+    },
+    {
+      "root": "NQ",
+      "exchange": "CME",
+      "period": "DEC 26",
+      "initial": "22,000",
+      "maintenance": "20,000"
+    },
+    {
+      "root": "MNQ",
+      "exchange": "CME",
+      "period": "DEC 26",
+      "initial": "2,200",
+      "maintenance": "2,000"
+    },
+    {
+      "root": "CL",
+      "exchange": "NYMEX",
+      "period": "NOV 26",
+      "initial": "$6,600.00",
+      "maintenance": "$6,000.00"
+    },
+    {
+      "root": "MCL",
+      "exchange": "NYMEX",
+      "period": "NOV 26",
+      "initial": "$660.00",
+      "maintenance": "$600.00"
+    },
+    {
+      "root": "GC",
+      "exchange": "COMEX",
+      "period": "DEC 26",
+      "initial": "9,900",
+      "maintenance": "9,000"
+    },
+    {
+      "root": "MGC",
+      "exchange": "COMEX",
+      "period": "DEC 26",
+      "initial": "990",
+      "maintenance": "900"
+    },
+    {
+      "root": "ZZ",
+      "exchange": "CBOT",
+      "period": "DEC 26",
+      "initial": "1,000",
+      "maintenance": "900"
+    },
+    {
+      "root": "ZT",
+      "exchange": "CBOT",
+      "period": "DEC 26",
+      "initial": "1,200",
+      "maintenance": "1,100"
+    },
+    {
+      "root": "ZF",
+      "exchange": "CBOT",
+      "period": "DEC 26",
+      "initial": "1,800",
+      "maintenance": "1,600"
+    },
+    {
+      "root": "ZN",
+      "exchange": "CBOT",
+      "period": "DEC 26",
+      "initial": "2,600",
+      "maintenance": "2,400"
+    },
+    {
+      "root": "ZB",
+      "exchange": "CBOT",
+      "period": "DEC 26",
+      "initial": "4,800",
+      "maintenance": "4,400"
+    },
+    {
+      "root": "HO",
+      "exchange": "NYMEX",
+      "period": "DEC 26",
+      "initial": "7,500",
+      "maintenance": "6,800"
+    },
+    {
+      "root": "RB",
+      "exchange": "NYMEX",
+      "period": "DEC 26",
+      "initial": "7,500",
+      "maintenance": "6,800"
+    },
+    {
+      "root": "NG",
+      "exchange": "NYMEX",
+      "period": "DEC 26",
+      "initial": "4,000",
+      "maintenance": "3,600"
+    },
+    {
+      "root": "SI",
+      "exchange": "COMEX",
+      "period": "DEC 26",
+      "initial": "16,000",
+      "maintenance": "14,500"
+    }
   ]
 }

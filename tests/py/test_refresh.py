@@ -14,6 +14,7 @@ REPO = Path(__file__).resolve().parents[2]
 WRITTEN = ["bars", "settlements", "margins", "challenge"]
 
 
+@pytest.mark.real_contracts
 def test_dry_run_writes_all_valid_envelopes(tmp_path, now):
     lines = []
     assert refresh.run_all(refresh.ALL, tmp_path, dry_run=True, now=now, print_fn=lines.append) == 0
@@ -153,6 +154,7 @@ def test_cli_module_entrypoint(tmp_path):
     assert [ln.split(":")[0] for ln in r.stdout.splitlines()[1:]] == refresh.ALL
 
 
+@pytest.mark.real_contracts
 def test_calendar_validation_is_read_only_and_ok(now):
     before = (config.DEFAULT_DATA_DIR / "calendar.json").read_bytes()
     res = validate_calendar.run(now)

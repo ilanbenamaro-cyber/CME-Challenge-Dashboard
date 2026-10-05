@@ -25,3 +25,9 @@
   minContractsMeter; book.contractsTradedOn; flattenBanner honours flatten_dates. Interpretations chosen by Ilan:
   20% cap base = prior trade date's closing balance (Daily tab; $1,000,000 before the first close), margin basis = initial.
   Golden: tests/golden/utc2026.json.
+- 2026-10-05 ADR-009: Sub-cent tick values. ZT ($7.8125/tick) and ZN ($15.625) are not whole cents, so P&L is computed
+  exactly in 1/10,000 USD (money.tickValueMicros) and rounded to cents half away from zero once per trade; sizer stop risk
+  rounds UP. Contracts added: ZT ZF ZN ZB HO RB NG SI (first live trades used ZT/ZN/HO). Expirations for the held Dec-26
+  contracts plus CLX26/HOX26 (expire inside the challenge) added to calendar.json; physically delivered contracts use
+  first notice day. Golden: tests/golden/treasury.json (incl. Ilan's first two closed rows). Job tests are pinned to the
+  original 8-contract fixture (tests/py/fixtures/contracts_v1.json); cross-file checks use the committed files.

@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from jobs import fetch_bars
-from jobs.common.config import load_contracts
+from jobs.common import config
 from jobs.common.envelope import make_envelope, write_atomic
 from jobs.common.fakes import synthetic_frame
 from jobs.common.schema import validate
@@ -233,7 +233,7 @@ def test_real_dbnstore_to_df_maps_continuous_symbol():
 
 
 def test_contract_list_drives_roots():
-    contracts = load_contracts()
+    contracts = config.load_contracts()
     parents = [c["root"] for c in contracts if c["parent"] is None]
     assert parents == ["ES", "NQ", "CL", "GC"]
 

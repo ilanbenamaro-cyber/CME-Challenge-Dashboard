@@ -71,7 +71,11 @@ class _Timeseries:
         root = symbol.split(".")[0]
         spec = self._fixture["roots"].get(root)
         if spec is None:
-            return _Store(pd.DataFrame(columns=["open", "high", "low", "close", "volume", "symbol"]))
+            if root in self._fixture.get("empty_roots", []):
+                return _Store(pd.DataFrame(columns=["open", "high", "low", "close", "volume", "symbol"]))
+            # Roots added to contracts.json after the fixture was written (e.g. ZT/ZN/HO) get generic
+            # SYNTHETIC bars so a dry run stays complete; prices are placeholders, never published.
+            spec = {"base": 100.0, "tick": 0.01}
         start, end = _parse_ts(params["start"]), _parse_ts(params["end"])
         return _Store(synthetic_frame(symbol, start, end, float(spec["base"]), float(spec["tick"])))
 
