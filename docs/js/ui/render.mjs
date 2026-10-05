@@ -19,7 +19,7 @@ import { CONT_LABEL } from './viewmodel.mjs';
 /** @typedef {import('./viewmodel.mjs').UiLevel} UiLevel */
 
 /** Build marker: the e2e smoke test reads this constant from disk and expects it in the served page. */
-export const BUILD_ID = 'wp-ui-2026-10-01.2-utc';
+export const BUILD_ID = 'wp-ui-2026-10-05.1-adr010';
 
 export { escapeHtml };
 
