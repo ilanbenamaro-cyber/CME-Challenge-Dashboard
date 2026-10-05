@@ -286,23 +286,31 @@ _AVAILABLE_END_DATE_RE = re.compile(r"data_end_date_after_available_end_date.*?n
 
 def resolve_raw_symbols(client: Any, ids: list[int], start: datetime, end: datetime) -> dict[int, str]:
     """instrument_id -> exchange raw symbol via symbology.resolve (a free metadata call). Takes the latest mapping
-    per id. `end` is the last data time fetched; end_date is exclusive, so it is the day after the last bar's day.
-    If Databento still refuses with data_end_date_after_available_end_date (seen on Actions 2026-10-05), retry
-    once with the date it allows. Unexpected shapes are skipped (those instruments get no contract series)."""
-    def call(end_date: str) -> Any:
+    per id. end_date (exclusive, whole days) is the day of `end`, the last data time fetched: a later date was refused
+    on Actions 2026-10-05 both as data_end_date_after_available_end_date and as dataset_unavailable_range (license
+    cutoff inside the day). On either refusal it retries once at the date Databento allows. Unexpected shapes are
+    skipped (those instruments get no contract series)."""
+    def call(start_date: str, end_date: str) -> Any:
         return client.symbology.resolve(
             dataset=DB_DATASET, symbols=[str(i) for i in ids], stype_in="instrument_id", stype_out="raw_symbol",
-            start_date=start.date().isoformat(), end_date=end_date,
+            start_date=start_date, end_date=end_date,
         )
 
-    end_date = ((end - timedelta(microseconds=1)).date() + timedelta(days=1)).isoformat()
+    def window(end_day: Any) -> tuple[str, str]:
+        # end_date is exclusive and whole-day: stop at the start of the last data day so the request never reaches
+        # past a license/availability cutoff inside that day (mappings only change at rolls).
+        start_day = min(start.date(), end_day - timedelta(days=1))
+        return start_day.isoformat(), end_day.isoformat()
+
     try:
-        res = call(end_date)
+        res = call(*window(end.date()))
     except Exception as exc:  # noqa: BLE001
         m = _AVAILABLE_END_DATE_RE.search(str(exc))
-        if not m or m.group(1) >= end_date or m.group(1) <= start.date().isoformat():
+        lic = licensed_end(exc)
+        allowed = (datetime.strptime(m.group(1), "%Y-%m-%d").date() if m else lic.date() if lic else None)
+        if allowed is None or allowed >= end.date():
             raise
-        res = call(m.group(1))
+        res = call(*window(allowed))
     print(f"bars symbology: {json.dumps(res)[:600]}", file=sys.stderr, flush=True)
     out: dict[int, str] = {}
     result = res.get("result", {}) if isinstance(res, dict) else {}

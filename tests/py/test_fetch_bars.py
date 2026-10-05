@@ -575,3 +575,25 @@ def test_server_error_on_cost_check_is_retried_once(tmp_path):
     env = fetch_bars.run(now, tmp_path / "bars.json", client_factory=lambda key: rec, env=ENV, sleep=slept.append)
     assert env["status"] == "ok", env["errors"]
     assert slept == [fetch_bars.RETRY_SLEEP_S]
+
+
+def test_symbology_respects_license_cutoff_inside_the_day(tmp_path):
+    """Actions 2026-10-05: resolve with end_date 2026-10-05 refused, license ends 2026-10-04T16:38Z."""
+    now = datetime(2026, 10, 5, 0, 36, tzinfo=timezone.utc)
+    rec = SymRecorder(_raw)
+    inner = rec.symbology
+
+    class Y:
+        def resolve(self, **p):
+            if p["end_date"] > "2026-10-04":
+                rec.calls.append(("resolve-refused", p))
+                raise RuntimeError("BentoClientError: 422 dataset_unavailable_range Part or all of your request for "
+                                   "dataset 'GLBX.MDP3' requires a subscription and/or license to access. Try again "
+                                   "with an end time before 2026-10-04T16:38:01.164533000Z.")
+            return inner.resolve(**p)
+
+    rec.symbology = Y()
+    env = _run(now, tmp_path, rec)
+    assert "contracts" in env["data"], env["errors"]
+    ok = [p for n, p in rec.calls if n == "resolve"]
+    assert ok and all(p["start_date"] < p["end_date"] <= "2026-10-04" for p in ok)
