@@ -31,3 +31,7 @@
   contracts plus CLX26/HOX26 (expire inside the challenge) added to calendar.json; physically delivered contracts use
   first notice day. Golden: tests/golden/treasury.json (incl. Ilan's first two closed rows). Job tests are pinned to the
   original 8-contract fixture (tests/py/fixtures/contracts_v1.json); cross-file checks use the committed files.
+- 2026-10-05 ADR-010: Marks by exact contract. Front-month continuous marks mis-valued back-month positions (HOZ26
+  marked with HOX26: ~+$14.7k phantom). Bars job fetches <ROOT>.c.0..c.2, maps instrument_id -> raw symbol via
+  symbology.resolve and publishes data.contracts keyed by contract code (e.g. HOZ26). Sheet Trades gains a `contract`
+  column; a position is marked only with its own contract's bars; missing/unmatched contract -> open P&L UNKNOWN.

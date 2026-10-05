@@ -88,6 +88,8 @@
  * @property {string|null} exit_time
  * @property {number} fees_usd        total round-turn fees for the row, >= 0
  * @property {string} [notes]
+ * @property {string|null} [contract] exact contract held, e.g. "HOZ26" (root + month code + 2-digit year); marks come from
+ *   this contract's own bars (ADR-010). null/absent -> open P&L UNKNOWN (no front-month guess)
  */
 
 /** @typedef {{date: string, reported_pnl_usd: number|null, reported_balance_usd: number|null}} DailyRow */
@@ -103,7 +105,21 @@
 
 /** @typedef {{t: string, o: number, h: number, l: number, c: number, v: number}} Bar  t = ISO-8601 UTC bar open */
 
-/** @typedef {{roots: Record<string, {symbol: string, bars: Bar[]}>, aliases: Record<string, string>, cost_usd: number}} BarsData */
+/**
+ * @typedef {object} ContractSeries  bars of one exact contract (ADR-010)
+ * @property {string} root        bars root (parent for micros), e.g. "HO"
+ * @property {string} symbol      continuous symbol it was fetched through on its latest bar, e.g. "HO.c.1"
+ * @property {string} raw_symbol  exchange raw symbol, e.g. "HOZ6"
+ * @property {Bar[]} bars
+ */
+
+/**
+ * @typedef {object} BarsData
+ * @property {Record<string, {symbol: string, bars: Bar[]}>} roots   front-month continuous (<ROOT>.c.0) per root
+ * @property {Record<string, string>} aliases                        micro root -> parent root
+ * @property {number} cost_usd
+ * @property {Record<string, ContractSeries>} [contracts]           keyed by contract code, e.g. "HOZ26" (ADR-010)
+ */
 
 /** @typedef {{rows: {root: string, contract_code: string, settle: number, trade_date: string}[]}} SettlementsData */
 

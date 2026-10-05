@@ -91,6 +91,12 @@
                   "string",
                   "null"
                 ]
+              },
+              "contract": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             }
           }
