@@ -126,6 +126,70 @@
               "type": "number",
               "minimum": 0,
               "maximum": 2
+            },
+            "contracts": {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^[A-Z0-9]{1,4}[FGHJKMNQUVXZ]\\d{2}$"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "root",
+                  "symbol",
+                  "raw_symbol",
+                  "bars"
+                ],
+                "properties": {
+                  "root": {
+                    "type": "string"
+                  },
+                  "symbol": {
+                    "type": "string"
+                  },
+                  "raw_symbol": {
+                    "type": "string"
+                  },
+                  "bars": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "t",
+                        "o",
+                        "h",
+                        "l",
+                        "c",
+                        "v"
+                      ],
+                      "properties": {
+                        "t": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "o": {
+                          "type": "number"
+                        },
+                        "h": {
+                          "type": "number"
+                        },
+                        "l": {
+                          "type": "number"
+                        },
+                        "c": {
+                          "type": "number"
+                        },
+                        "v": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }

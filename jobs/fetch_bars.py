@@ -12,6 +12,7 @@ date from the response metadata. The index is ts_event (bar open) because ohlcv 
 """
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
@@ -32,6 +33,7 @@ STYPE_IN = "continuous"
 LOOKBACK = timedelta(hours=72)
 KEEP_BARS = 72
 COST_CAP_USD = 2.00
+DEPTH = 3  # continuous months per root (<ROOT>.c.0 .. c.2) so back-month positions get their own marks (ADR-010)
 SOURCE = f"Databento {DB_DATASET} {DB_SCHEMA} (stype_in={STYPE_IN}, <ROOT>.c.0)"
 DRY_SOURCE = "SYNTHETIC dry-run fixture (fake Databento client; not market data)"
 
@@ -75,6 +77,21 @@ def licensed_end(exc: BaseException) -> datetime | None:
 
 _SERVER_ERROR_RE = re.compile(r"BentoServerError|\b5\d\d\b.*(gateway|timed out|unavailable|internal)", re.I)
 RETRY_SLEEP_S = 5.0
+
+
+def _is_server_error(exc: BaseException) -> bool:
+    return bool(_SERVER_ERROR_RE.search(str(exc))) or type(exc).__name__ == "BentoServerError"
+
+
+def get_cost_with_retry(client: Any, params: dict, sleep: Callable[[float], None] = time.sleep) -> Any:
+    """metadata.get_cost, retried once on a server-side error (504 seen on NQ/NG on Actions)."""
+    try:
+        return client.metadata.get_cost(**params)
+    except Exception as exc:  # noqa: BLE001
+        if not _is_server_error(exc):
+            raise
+        sleep(RETRY_SLEEP_S)
+        return client.metadata.get_cost(**params)
 
 
 def get_range_with_retry(client: Any, params: dict, sleep: Callable[[float], None] = time.sleep) -> Any:
@@ -156,7 +173,7 @@ def request_params(root: str, start: datetime, end: datetime) -> dict:
         "dataset": DB_DATASET,
         "start": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "end": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "symbols": [symbol_for(root)],
+        "symbols": [f"{root}.c.{n}" for n in range(DEPTH)],
         "schema": DB_SCHEMA,
         "stype_in": STYPE_IN,
     }
@@ -170,18 +187,56 @@ def _num(x: Any) -> float | None:
     return v if math.isfinite(v) else None
 
 
-def frame_to_bars(df: Any, symbol: str) -> tuple[list[dict], int]:
-    """Convert a Databento ohlcv DataFrame to schema bars. Returns (bars sorted by t, rows dropped).
+def _row_bar(ts: Any, row: Any) -> dict | None:
+    o, h, l, c, v = (_num(row.get(k)) for k in ("open", "high", "low", "close", "volume"))
+    if None in (o, h, l, c, v) or v < 0:  # type: ignore[operator]
+        return None
+    t = _ts_utc(ts)
+    if t is None:
+        return None
+    key = t.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {"t": key, "o": o, "h": h, "l": l, "c": c, "v": v}
 
-    Rows whose `symbol` column is present and differs from the requested symbol are dropped, as are rows
-    with a non-finite price or volume (never replaced by 0).
+
+def frame_by_instrument(df: Any, expected: set[str]) -> dict[int, dict]:
+    """Group an ohlcv DataFrame by instrument_id -> {"symbol": continuous symbol of its latest row, "bars": [...]}.
+    Only rows whose `symbol` is one of the requested continuous symbols; unusable rows are skipped (never 0)."""
+    cols = getattr(df, "columns", [])
+    if "instrument_id" not in cols:
+        return {}
+    out: dict[int, dict] = {}
+    for ts, row in df.iterrows():
+        sym = row["symbol"] if "symbol" in cols else None
+        if sym is not None and sym not in expected:
+            continue
+        try:
+            iid = int(row["instrument_id"])
+        except (TypeError, ValueError):
+            continue
+        bar = _row_bar(ts, row)
+        if bar is None:
+            continue
+        slot = out.setdefault(iid, {"symbol": sym, "bars": {}})
+        slot["bars"][bar["t"]] = bar
+        if sym is not None and bar["t"] >= max(slot["bars"]):
+            slot["symbol"] = sym
+    return {i: {"symbol": v["symbol"], "bars": [v["bars"][k] for k in sorted(v["bars"])]} for i, v in out.items()}
+
+
+def frame_to_bars(df: Any, symbol: str, also: set[str] | None = None) -> tuple[list[dict], int]:
+    """Convert a Databento ohlcv DataFrame to schema bars for `symbol`. Returns (bars sorted by t, rows dropped).
+
+    Rows of the other requested continuous symbols (`also`, e.g. ES.c.1/ES.c.2) are skipped silently; rows of any
+    other symbol are dropped and counted, as are rows with a non-finite price or volume (never replaced by 0).
     """
     bars: dict[str, dict] = {}
     dropped = 0
     has_symbol = "symbol" in getattr(df, "columns", [])
+    also = also or set()
     for ts, row in df.iterrows():
         if has_symbol and row["symbol"] != symbol:
-            dropped += 1
+            if row["symbol"] not in also:
+                dropped += 1
             continue
         o, h, l, c, v = (_num(row.get(k)) for k in ("open", "high", "low", "close", "volume"))
         if None in (o, h, l, c, v) or v < 0:  # type: ignore[operator]
@@ -203,6 +258,111 @@ def _ts_utc(ts: Any) -> datetime | None:
     if not isinstance(ts, datetime) or ts.tzinfo is None:
         return None
     return ts.astimezone(timezone.utc)
+
+
+_RAW_RE = re.compile(r"^([FGHJKMNQUVXZ])(\d{1,2})$")
+
+
+def contract_code(root: str, raw: str, ref_year: int) -> str | None:
+    """Exchange raw symbol -> contract code: "HOZ6" -> "HOZ26" (1-digit year resolved to the decade nearest
+    `ref_year`, never more than a year in the past). None if `raw` is not root + month + year."""
+    if not isinstance(raw, str) or not raw.startswith(root):
+        return None
+    m = _RAW_RE.match(raw[len(root):])
+    if not m:
+        return None
+    month, yy = m.group(1), m.group(2)
+    if len(yy) == 2:
+        year = 2000 + int(yy)
+    else:
+        year = (ref_year // 10) * 10 + int(yy)
+        if year < ref_year - 1:
+            year += 10
+    return f"{root}{month}{year % 100:02d}"
+
+
+_AVAILABLE_END_DATE_RE = re.compile(r"data_end_date_after_available_end_date.*?not including '(\d{4}-\d{2}-\d{2})'", re.S)
+
+
+def resolve_raw_symbols(client: Any, ids: list[int], start: datetime, end: datetime) -> dict[int, str]:
+    """instrument_id -> exchange raw symbol via symbology.resolve (a free metadata call). Takes the latest mapping
+    per id. end_date (exclusive, whole days) is the day of `end`, the last data time fetched: a later date was refused
+    on Actions 2026-10-05 both as data_end_date_after_available_end_date and as dataset_unavailable_range (license
+    cutoff inside the day). On either refusal it retries once at the date Databento allows. Unexpected shapes are
+    skipped (those instruments get no contract series)."""
+    def call(start_date: str, end_date: str) -> Any:
+        return client.symbology.resolve(
+            dataset=DB_DATASET, symbols=[str(i) for i in ids], stype_in="instrument_id", stype_out="raw_symbol",
+            start_date=start_date, end_date=end_date,
+        )
+
+    def window(end_day: Any) -> tuple[str, str]:
+        # end_date is exclusive and whole-day: stop at the start of the last data day so the request never reaches
+        # past a license/availability cutoff inside that day (mappings only change at rolls).
+        start_day = min(start.date(), end_day - timedelta(days=1))
+        return start_day.isoformat(), end_day.isoformat()
+
+    try:
+        res = call(*window(end.date()))
+    except Exception as exc:  # noqa: BLE001
+        m = _AVAILABLE_END_DATE_RE.search(str(exc))
+        lic = licensed_end(exc)
+        allowed = (datetime.strptime(m.group(1), "%Y-%m-%d").date() if m else lic.date() if lic else None)
+        if allowed is None or allowed >= end.date():
+            raise
+        res = call(*window(allowed))
+    print(f"bars symbology: {json.dumps(res)[:600]}", file=sys.stderr, flush=True)
+    out: dict[int, str] = {}
+    result = res.get("result", {}) if isinstance(res, dict) else {}
+    for k, v in result.items() if isinstance(result, dict) else []:
+        try:
+            iid = int(k)
+        except (TypeError, ValueError):
+            continue
+        entries = v if isinstance(v, list) else [v]
+        syms = [e.get("s") for e in entries if isinstance(e, dict) and isinstance(e.get("s"), str)]
+        syms += [e for e in entries if isinstance(e, str)]
+        if syms:
+            out[iid] = syms[-1]
+    return out
+
+
+def build_contract_series(client: Any, by_instrument: dict[str, dict[int, dict]], previous: dict | None,
+                          window_start: datetime, data_end: datetime, key: str) -> tuple[dict, list[str]]:
+    """data.contracts (ADR-010): each fetched instrument's bars under its contract code, merged with the previously
+    published series; series whose last bar is older than the window are dropped (expired/rolled off)."""
+    errors: list[str] = []
+    prev_series = {}
+    try:
+        prev_series = dict(previous["data"].get("contracts") or {})  # type: ignore[index]
+    except (TypeError, KeyError, AttributeError):
+        prev_series = {}
+    ids = sorted({i for per_root in by_instrument.values() for i in per_root})
+    raw: dict[int, str] = {}
+    if ids:
+        try:
+            raw = resolve_raw_symbols(client, ids, window_start, data_end)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"contract symbology failed: {safe_error(exc, [key])}")
+    series: dict[str, dict] = {}
+    for code, s in prev_series.items():
+        if isinstance(s, dict) and isinstance(s.get("bars"), list) and s["bars"]:
+            series[code] = s
+    for root, per_root in by_instrument.items():
+        for iid, got in per_root.items():
+            r = raw.get(iid)
+            if r is None or not got["bars"]:
+                continue
+            ref_year = int(got["bars"][-1]["t"][:4])
+            code = contract_code(root, r, ref_year)
+            if code is None:
+                errors.append(f"{root}: unrecognised raw symbol {r!r}")
+                continue
+            old = series.get(code, {}).get("bars", [])
+            series[code] = {"root": root, "symbol": got["symbol"] or f"{root}.c.?", "raw_symbol": r,
+                            "bars": merge_bars(old, got["bars"], KEEP_BARS)}
+    cutoff = window_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {c: s for c, s in sorted(series.items()) if s["bars"][-1]["t"] >= cutoff}, errors
 
 
 def run(
@@ -261,7 +421,7 @@ def run(
         params = request_params(root, root_start, end)
         try:
             try:
-                cost = _num(client.metadata.get_cost(**params))
+                cost = _num(get_cost_with_retry(client, params, sleep))
             except Exception as exc:  # noqa: BLE001
                 lic = licensed_end(exc)
                 if lic is None or lic >= end:
@@ -271,7 +431,7 @@ def run(
                     unchanged.append(root)
                     continue
                 params = request_params(root, root_start, end)
-                cost = _num(client.metadata.get_cost(**params))
+                cost = _num(get_cost_with_retry(client, params, sleep))
             log_cost("quote", params, cost)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{root}: cost check failed: {safe_error(exc, [key])}")
@@ -303,6 +463,8 @@ def run(
             if last_open is not None:
                 latest = last_open if latest is None else max(latest, last_open)
 
+    by_instrument: dict[str, dict[int, dict]] = {}
+
     for root in unchanged:
         keep_previous(root)
 
@@ -314,7 +476,7 @@ def run(
         if p_start >= delayed_to:
             raise _NothingNew()
         p = request_params(root, p_start, delayed_to)
-        cost = _num(client.metadata.get_cost(**p))
+        cost = _num(get_cost_with_retry(client, p, sleep))
         log_cost("quote (licensed window)", p, cost)
         if cost is None or cost < 0 or total + cost > COST_CAP_USD:
             raise RuntimeError("cost check for the licensed window failed or exceeds the cost cap")
@@ -328,7 +490,7 @@ def run(
         if p_start >= w_end:
             raise _NothingNew()
         p = request_params(root, p_start, w_end)
-        cost = _num(client.metadata.get_cost(**p))
+        cost = _num(get_cost_with_retry(client, p, sleep))
         log_cost("quote (clamped window)", p, cost)
         if cost is None or cost < 0 or total + cost > COST_CAP_USD:
             raise RuntimeError("cost check for the clamped window failed or exceeds the cost cap")
@@ -357,7 +519,9 @@ def run(
                 store = get_range_with_retry(client, params, sleep)
             billed += quote
             df = store.to_df()
-            bars, dropped = frame_to_bars(df, symbol)
+            requested = set(params["symbols"])
+            bars, dropped = frame_to_bars(df, symbol, requested - {symbol})
+            by_instrument[root] = frame_by_instrument(df, requested)
         except _NothingNew:
             keep_previous(root)
             continue
@@ -383,14 +547,21 @@ def run(
     status = "partial" if missing else "ok"
     if missing:
         errors.append(f"missing roots: {', '.join(missing)}")
+    series, c_errors = build_contract_series(client, by_instrument, previous, start,
+                                             delayed_to if delayed_to is not None else end, key)
+    errors.extend(c_errors)
     data = {
         "roots": result_roots,
         "aliases": config.aliases(contracts),
         "cost_usd": round(billed, 6),
     }
+    if series:
+        data["contracts"] = series
     data_as_of = min(latest + timedelta(hours=1), now)
     data_end = delayed_to if delayed_to is not None else end
     if data_end < window_end:
         source = f"{source}; delayed: Databento data available to this account up to {data_end:%Y-%m-%dT%H:%MZ}"
+    for e in errors:  # full list in the Actions log (the summary line shows only the first)
+        print(f"bars error: {e}", file=sys.stderr, flush=True)
     envelope = make_envelope(DATASET_NAME, source, status, errors, data, data_as_of, now)
     return publish(DATASET_NAME, source, envelope, out, previous, now)

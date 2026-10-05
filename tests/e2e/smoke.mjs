@@ -97,7 +97,9 @@ const utcGolden = JSON.parse(readFileSync(join(ROOT, 'tests/golden/utc2026.json'
 const UTC_RULES = { schema_version: 1, updated_at: 'e2e', source_doc: 'tests/golden/utc2026.json#rules_fixture (TEST FIXTURE)', rules: utcGolden.rules_fixture };
 const FIXTURES = {
   'rules.json': { schema_version: 1, updated_at: 'e2e', source_doc: 'tests/golden/sizer.json#rules_fixture (TEST FIXTURE)', rules: golden.rules_fixture },
-  'bars.json': env('bars', { roots: { ES: { symbol: 'ES.c.0', bars: bars(5790.25, 0.5) }, NQ: { symbol: 'NQ.c.0', bars: bars(20100, 2.25) } }, aliases: { MES: 'ES', MNQ: 'NQ' }, cost_usd: 0.004 }, NOW - 35 * MIN),
+  'bars.json': env('bars', { roots: { ES: { symbol: 'ES.c.0', bars: bars(5790.25, 0.5) }, NQ: { symbol: 'NQ.c.0', bars: bars(20100, 2.25) } }, aliases: { MES: 'ES', MNQ: 'NQ' }, cost_usd: 0.004,
+    // ADR-010: positions are marked only from their own contract's series (MESZ26 -> ESZ26).
+    contracts: { ESZ26: { root: 'ES', symbol: 'ES.c.0', raw_symbol: 'ESZ6', bars: bars(5790.25, 0.5) } } }, NOW - 35 * MIN),
   'settlements.json': env('settlements', { rows: [
     { root: 'ES', contract_code: 'ESZ26', settle: 5796.5, trade_date: '2026-09-29' },
     { root: 'NQ', contract_code: 'NQZ26', settle: 20122.75, trade_date: '2026-09-29' },
@@ -116,9 +118,9 @@ const SHEET = {
   generated_at: NOW_ISO,
   tabs: {
     Trades: [
-      { id: 'C1', root: 'MES', side: 'short', qty: 1, entry: 5800, exit: 5790, entry_time: '2026-09-30T09:00:00-05:00', exit_time: '2026-09-30T14:00:00-05:00', fees_usd: 0.62, notes: 'fade' },
-      { id: 'C0', root: 'ES', side: 'long', qty: 1, entry: 5780, exit: 5781.5, entry_time: '2026-09-29T09:00:00-05:00', exit_time: '2026-09-29T11:00:00-05:00', fees_usd: 4.5, notes: '' },
-      { id: 'O1', root: 'MES', side: 'long', qty: '2', entry: '5795.00', exit: '', entry_time: '2026-09-30T13:00:00-05:00', exit_time: '', fees_usd: '1.24', notes: XSS },
+      { id: 'C1', root: 'MES', side: 'short', qty: 1, entry: 5800, exit: 5790, entry_time: '2026-09-30T09:00:00-05:00', exit_time: '2026-09-30T14:00:00-05:00', fees_usd: 0.62, notes: 'fade', contract: 'MESZ26' },
+      { id: 'C0', root: 'ES', side: 'long', qty: 1, entry: 5780, exit: 5781.5, entry_time: '2026-09-29T09:00:00-05:00', exit_time: '2026-09-29T11:00:00-05:00', fees_usd: 4.5, notes: '', contract: 'ESZ26' },
+      { id: 'O1', root: 'MES', side: 'long', qty: '2', entry: '5795.00', exit: '', entry_time: '2026-09-30T13:00:00-05:00', exit_time: '', fees_usd: '1.24', notes: XSS, contract: 'mesz26' },
     ],
     Daily: [
       { date: '2026-09-29', reported_pnl_usd: 70.5, reported_balance_usd: 50070.5 },
@@ -244,6 +246,9 @@ async function scenario(browser, sc) {
     check(/Flatten/.test(firstBanner) && /WARN/.test(firstBanner), `${tag} first banner is the amber flatten warning`);
     check(await page.locator('#app script').count() === 0, `${tag} no script element injected from Sheet notes`);
     check((await page.locator('#p-positions').innerText()).includes('<script>alert(1)</script>'), `${tag} Sheet notes shown as literal text`);
+    // ADR-010: the open MESZ26 row is marked from the ESZ26 contract series and says so (code under test is served).
+    const posText = await page.locator('#p-positions').innerText();
+    check(/MESZ26/.test(posText) && /MESZ26 via ESZ26 \(ESZ6\) bar close/.test(posText), `${tag} position mark names its exact contract (MESZ26 via ESZ26)`);
 
     // Sizer: MES, $500 risk, 32 ticks, $0 fee, intraday -> $40/contract -> 12 (risk binds).
     await page.selectOption('#sizer-form select[name="root"]', 'MES');
