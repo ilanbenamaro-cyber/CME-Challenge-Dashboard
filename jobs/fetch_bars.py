@@ -266,13 +266,28 @@ def contract_code(root: str, raw: str, ref_year: int) -> str | None:
     return f"{root}{month}{year % 100:02d}"
 
 
+_AVAILABLE_END_DATE_RE = re.compile(r"data_end_date_after_available_end_date.*?not including '(\d{4}-\d{2}-\d{2})'", re.S)
+
+
 def resolve_raw_symbols(client: Any, ids: list[int], start: datetime, end: datetime) -> dict[int, str]:
     """instrument_id -> exchange raw symbol via symbology.resolve (a free metadata call). Takes the latest mapping
-    per id. Unexpected shapes are skipped (those instruments simply get no contract series)."""
-    res = client.symbology.resolve(
-        dataset=DB_DATASET, symbols=[str(i) for i in ids], stype_in="instrument_id", stype_out="raw_symbol",
-        start_date=start.date().isoformat(), end_date=(end + timedelta(days=1)).date().isoformat(),
-    )
+    per id. `end` is the last data time fetched; end_date is exclusive, so it is the day after the last bar's day.
+    If Databento still refuses with data_end_date_after_available_end_date (seen on Actions 2026-10-05), retry
+    once with the date it allows. Unexpected shapes are skipped (those instruments get no contract series)."""
+    def call(end_date: str) -> Any:
+        return client.symbology.resolve(
+            dataset=DB_DATASET, symbols=[str(i) for i in ids], stype_in="instrument_id", stype_out="raw_symbol",
+            start_date=start.date().isoformat(), end_date=end_date,
+        )
+
+    end_date = ((end - timedelta(microseconds=1)).date() + timedelta(days=1)).isoformat()
+    try:
+        res = call(end_date)
+    except Exception as exc:  # noqa: BLE001
+        m = _AVAILABLE_END_DATE_RE.search(str(exc))
+        if not m or m.group(1) >= end_date or m.group(1) <= start.date().isoformat():
+            raise
+        res = call(m.group(1))
     print(f"bars symbology: {json.dumps(res)[:600]}", file=sys.stderr, flush=True)
     out: dict[int, str] = {}
     result = res.get("result", {}) if isinstance(res, dict) else {}
@@ -290,7 +305,7 @@ def resolve_raw_symbols(client: Any, ids: list[int], start: datetime, end: datet
 
 
 def build_contract_series(client: Any, by_instrument: dict[str, dict[int, dict]], previous: dict | None,
-                          window_start: datetime, now: datetime, key: str) -> tuple[dict, list[str]]:
+                          window_start: datetime, data_end: datetime, key: str) -> tuple[dict, list[str]]:
     """data.contracts (ADR-010): each fetched instrument's bars under its contract code, merged with the previously
     published series; series whose last bar is older than the window are dropped (expired/rolled off)."""
     errors: list[str] = []
@@ -303,7 +318,7 @@ def build_contract_series(client: Any, by_instrument: dict[str, dict[int, dict]]
     raw: dict[int, str] = {}
     if ids:
         try:
-            raw = resolve_raw_symbols(client, ids, window_start, now)
+            raw = resolve_raw_symbols(client, ids, window_start, data_end)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"contract symbology failed: {safe_error(exc, [key])}")
     series: dict[str, dict] = {}
@@ -509,7 +524,8 @@ def run(
     status = "partial" if missing else "ok"
     if missing:
         errors.append(f"missing roots: {', '.join(missing)}")
-    series, c_errors = build_contract_series(client, by_instrument, previous, start, now, key)
+    series, c_errors = build_contract_series(client, by_instrument, previous, start,
+                                             delayed_to if delayed_to is not None else end, key)
     errors.extend(c_errors)
     data = {
         "roots": result_roots,

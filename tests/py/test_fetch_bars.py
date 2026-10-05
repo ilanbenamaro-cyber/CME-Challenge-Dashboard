@@ -531,3 +531,25 @@ def test_expired_contract_series_are_pruned(tmp_path):
     path.write_text(json.dumps(env))
     env2 = _run(t0 + timedelta(hours=1), tmp_path, SymRecorder(_raw))
     assert "CLV26" not in env2["data"]["contracts"] and "CLZ26" in env2["data"]["contracts"]
+
+
+def test_symbology_end_date_is_last_data_day_and_retries_on_available_end_date(tmp_path):
+    """Actions 2026-10-05: resolve refused end_date 2026-10-06 ('data up to, but not including 2026-10-05')."""
+    now = datetime(2026, 10, 5, 0, 26, tzinfo=timezone.utc)
+    rec = SymRecorder(_raw)
+    inner = rec.symbology
+
+    class Y:
+        def resolve(self, **p):
+            if p["end_date"] > "2026-10-05":
+                rec.calls.append(("resolve-refused", p))
+                raise RuntimeError("BentoClientError: 422 data_end_date_after_available_end_date The dataset GLBX.MDP3 has "
+                                   "data available has data up to, but not including '2026-10-05'. The `end_date` in the "
+                                   "query ('2026-10-06') is after the available range.")
+            return inner.resolve(**p)
+
+    rec.symbology = Y()
+    env = _run(now, tmp_path, rec)
+    assert "contracts" in env["data"], env["errors"]
+    ends = [p["end_date"] for n, p in rec.calls if n == "resolve"]
+    assert ends and all(e <= "2026-10-05" for e in ends)
