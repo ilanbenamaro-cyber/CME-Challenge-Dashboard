@@ -145,8 +145,9 @@ test('(e) a micro (MESZ26) is marked with the parent ESZ26 series', () => {
   assert.equal(vm.markets?.find((m) => m.root === 'ES')?.last.text, '5801.25');
 });
 
-test('(f) a stale contract series shows a STALE badge and leaves open P&L UNKNOWN', () => {
+test('(f) a stale contract series still prices the position, with a STALE badge on every derived figure (decision B)', () => {
   // HOZ26 last bar opened 31h ago, closed 30h ago -> STALE 1d 6h; the envelope and HO front month are fresh.
+  // Ilan chose B (2026-10-05): stale marks price the position; 125 ticks x $4.20 x 2 = $1,050.00 (fees 0).
   const base = inputs();
   const bars = barsWith({ HOZ26: { ...HOZ26.HOZ26, bars: hoBars(4.4, 30 * 60 * MIN) } });
   const vm = buildViewModel(hoInputs({ envs: { ...base.envs, bars } }));
@@ -155,9 +156,11 @@ test('(f) a stale contract series shows a STALE badge and leaves open P&L UNKNOW
   const row = vm.positions?.rows[0];
   assert.equal(row?.mark.text, '4.4000');
   assert.equal(row?.mark.badge, 'STALE 1d 6h');
-  assert.equal(row?.pnl.text, 'UNKNOWN');
-  assert.match(row?.pnl.note ?? '', /HOZ26 bars STALE/);
-  assert.equal(vm.account?.open.text, 'UNKNOWN');
+  assert.equal(row?.pnl.text, '$1,050.00');
+  assert.equal(row?.pnl.badge, 'STALE 1d 6h');
+  assert.equal(vm.account?.open.text, '$1,050.00');
+  assert.match(vm.account?.open.badge ?? '', /bars STALE 1d 6h/);   // series age, although the envelope is fresh
+  assert.match(vm.account?.equity.badge ?? '', /bars STALE 1d 6h/);
   assert.match(renderApp(vm), /STALE 1d 6h/);
 });
 
