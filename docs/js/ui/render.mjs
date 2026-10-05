@@ -192,13 +192,13 @@ export function renderPositions(vm) {
     : p.rows.length === 0
       ? html`<p class="empty">${p.reason}</p>`
       : html`<div class="table-wrap"><table class="grid">
-  <thead><tr><th>ID</th><th>Root</th><th>Side</th><th class="num">Qty</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">Open P&amp;L</th></tr></thead>
+  <thead><tr><th>ID</th><th>Contract</th><th>Side</th><th class="num">Qty</th><th class="num">Entry</th><th class="num">Mark</th><th class="num">Open P&amp;L</th></tr></thead>
   <tbody>${p.rows.map((r) => html`<tr${r.flags.length ? html` class="row-breach"` : ''}>
-    <td class="mono">${r.id}</td><td>${r.root}</td><td class="side-${r.side}">${r.side.toUpperCase()}</td><td class="num">${r.qty}</td>
-    <td class="num">${r.entry_text}</td><td class="num">${renderCell(r.mark, { noNote: true })}</td><td class="num">${renderCell(r.pnl)}</td>
+    <td class="mono">${r.id}</td><td class="mono">${r.contract_text}</td><td class="side-${r.side}">${r.side.toUpperCase()}</td><td class="num">${r.qty}</td>
+    <td class="num">${r.entry_text}</td><td class="num">${renderCell(r.mark)}</td><td class="num">${renderCell(r.pnl)}</td>
     </tr>${r.notes || r.flags.length ? html`<tr class="subrow"><td colspan="7" class="notes">${r.notes ? html`<span class="note-inline">Notes: ${r.notes}</span>` : ''}${r.flags.length ? html` ${levelPill('breach')} ${r.flags.join('; ')}` : ''}</td></tr>` : ''}`)}</tbody>
 </table></div>
-<p class="note">Mark = last 1h close of the ${CONT_LABEL} series; during the roll it may not be the contract month you hold.</p>`;
+<p class="note">Mark = last 1h close of the position's own contract (micros use the parent contract, e.g. MESZ26 → ESZ26). A row without a contract, or a contract with no bars, is UNKNOWN.</p>`;
   return html`<section class="panel" id="p-positions" data-live="positions">
   <h2>Positions${p.badge ? html` <span class="badge">${p.badge}</span>` : ''}</h2>
   <div class="pos-summary"><span class="kpi-label">${p.std_label}</span> ${

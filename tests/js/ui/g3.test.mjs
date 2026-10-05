@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildViewModel, compareSettleRows } from '../../../docs/js/ui/viewmodel.mjs';
 import { renderApp } from '../../../docs/js/ui/render.mjs';
-import { NOW, MIN, env, esBars, sheetRaw, sheetResult, inputs, noSectionErrors } from './fixtures.mjs';
+import { NOW, MIN, env, esBars, esz26, sheetRaw, sheetResult, inputs, noSectionErrors } from './fixtures.mjs';
 
 // P0-1 (/tmp/g3/vm_invalid_open.mjs): an open ES row with side "Buy" is rejected by normalizeSheet.
 const BAD_OPEN = { id: 'O9', root: 'ES', side: 'Buy', qty: 3, entry: 5795, exit: '', entry_time: '2026-09-30T13:00:00-05:00', exit_time: '', fees_usd: 0, notes: '' };
@@ -157,7 +157,8 @@ function esBarsShifted(shiftMs) {
 test('P1-4: fresh bars envelope but an ES series that ended 30h ago: mark STALE, open P&L UNKNOWN', () => {
   // /tmp/g3/vm_attacks.mjs #6.
   const base = inputs();
-  const bars = env('bars', { roots: { ES: { symbol: 'ES.c.0', bars: esBarsShifted(30 * 60 * MIN) } } }, NOW - 30 * MIN);
+  const shifted = esBarsShifted(30 * 60 * MIN);
+  const bars = env('bars', { roots: { ES: { symbol: 'ES.c.0', bars: shifted } }, contracts: esz26(shifted) }, NOW - 30 * MIN);
   const vm = buildViewModel({ ...base, envs: { ...base.envs, bars } });
   noSectionErrors(vm);
   assert.ok(vm.account && vm.positions && vm.markets);
@@ -175,7 +176,8 @@ test('P1-4: fresh bars envelope but an ES series that ended 30h ago: mark STALE,
 
 test('P1-4: per-root check passes for a series whose last bar closed within the bars policy', () => {
   const base = inputs();
-  const bars = env('bars', { roots: { ES: { symbol: 'ES.c.0', bars: esBarsShifted(60 * MIN) } } }, NOW - 30 * MIN);
+  const shifted = esBarsShifted(60 * MIN);
+  const bars = env('bars', { roots: { ES: { symbol: 'ES.c.0', bars: shifted } }, contracts: esz26(shifted) }, NOW - 30 * MIN);
   const vm = buildViewModel({ ...base, envs: { ...base.envs, bars } });
   assert.equal(vm.positions?.rows[0]?.mark.badge, null);
   assert.notEqual(vm.account?.open.text, 'UNKNOWN');
@@ -189,17 +191,21 @@ test('P1-4: a root with no bars is UNKNOWN', () => {
   assert.equal(vm.account?.open.text, 'UNKNOWN');
 });
 
-test('P1-5: marks and last prices from bars are labelled front-month continuous (.c.0)', () => {
+test('P1-5 / ADR-010: Markets last is labelled front-month continuous; position marks name their own contract', () => {
   const vm = buildViewModel(inputs());
   noSectionErrors(vm);
-  const label = /front-month continuous \(\.c\.0\)/;
+  const front = /front-month continuous \(\.c\.0\)/;
   const es = vm.markets?.find((m) => m.root === 'ES');
-  assert.match(es?.last.note ?? '', label);
-  assert.match(vm.positions?.rows[0]?.mark.note ?? '', label);
-  assert.match(vm.account?.open.note ?? '', label);
+  assert.match(es?.last.note ?? '', front);
+  const mark = vm.positions?.rows[0]?.mark.note ?? '';
+  assert.match(mark, /^MESZ26 via ESZ26 \(ESZ6\) bar close/);
+  assert.doesNotMatch(mark, front);
+  assert.doesNotMatch(vm.account?.open.note ?? '', front);
+  assert.equal(vm.positions?.rows[0]?.contract_text, 'MESZ26');
   const html = renderApp(vm);
-  assert.match(region(html, 'data-live="positions"'), label);
-  assert.match(region(html, 'data-live="markets"'), label);
+  assert.match(region(html, 'data-live="positions"'), /ESZ26 \(ESZ6\) bar close/);
+  assert.doesNotMatch(region(html, 'data-live="positions"'), front);
+  assert.match(region(html, 'data-live="markets"'), front);
 });
 
 test('P1-7: the daily-loss meter states its assumed definition', () => {

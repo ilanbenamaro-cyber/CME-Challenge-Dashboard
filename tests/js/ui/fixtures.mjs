@@ -56,9 +56,17 @@ export function esBars() {
   return bars;
 }
 
+/**
+ * ESZ26 exact-contract series (ADR-010) holding the given bars; positions are marked only from these.
+ * @param {ReturnType<typeof esBars>} bars
+ */
+export function esz26(bars = esBars()) {
+  return { ESZ26: { root: 'ES', symbol: 'ES.c.0', raw_symbol: 'ESZ6', bars } };
+}
+
 /** @param {number} asOfMs */
 export function barsEnv(asOfMs) {
-  return env('bars', { roots: { ES: { symbol: 'ES.c.0', bars: esBars() } }, aliases: { MES: 'ES' }, cost_usd: 0.01 }, asOfMs);
+  return env('bars', { roots: { ES: { symbol: 'ES.c.0', bars: esBars() } }, aliases: { MES: 'ES' }, cost_usd: 0.01, contracts: esz26() }, asOfMs);
 }
 
 export const CME_MARGINS = { rows: [
@@ -66,15 +74,15 @@ export const CME_MARGINS = { rows: [
   { root: 'MES', initial_usd: 1650, maintenance_usd: 1500, as_of: '2026-09-29' },
 ] };
 
-/** Sheet rows: one closed MES short today (+$49.38 net) and one open MES long 2 @ 5795. */
+/** Sheet rows: one closed MES short today (+$49.38 net) and one open MESZ26 long 2 @ 5795 (marked via ESZ26). */
 export function sheetRaw(extraTrades = /** @type {unknown[]} */ ([]), notes = 'ok') {
   return {
     schema_version: 1,
     generated_at: new Date(NOW).toISOString(),
     tabs: {
       Trades: [
-        { id: 'C1', root: 'MES', side: 'short', qty: 1, entry: 5800, exit: 5790, entry_time: '2026-09-30T09:00:00-05:00', exit_time: '2026-09-30T14:00:00-05:00', fees_usd: 0.62, notes: '' },
-        { id: 'O1', root: 'MES', side: 'long', qty: '2', entry: '5795.00', exit: '', entry_time: '2026-09-30T13:00:00-05:00', exit_time: '', fees_usd: '1.24', notes },
+        { id: 'C1', root: 'MES', side: 'short', qty: 1, entry: 5800, exit: 5790, entry_time: '2026-09-30T09:00:00-05:00', exit_time: '2026-09-30T14:00:00-05:00', fees_usd: 0.62, notes: '', contract: 'MESZ26' },
+        { id: 'O1', root: 'MES', side: 'long', qty: '2', entry: '5795.00', exit: '', entry_time: '2026-09-30T13:00:00-05:00', exit_time: '', fees_usd: '1.24', notes, contract: ' mesz26 ' },
         ...extraTrades,
       ],
       Daily: [{ date: '2026-09-29', reported_pnl_usd: 100, reported_balance_usd: 50100 }],
