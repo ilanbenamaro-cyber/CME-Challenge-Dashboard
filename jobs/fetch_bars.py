@@ -79,6 +79,21 @@ _SERVER_ERROR_RE = re.compile(r"BentoServerError|\b5\d\d\b.*(gateway|timed out|u
 RETRY_SLEEP_S = 5.0
 
 
+def _is_server_error(exc: BaseException) -> bool:
+    return bool(_SERVER_ERROR_RE.search(str(exc))) or type(exc).__name__ == "BentoServerError"
+
+
+def get_cost_with_retry(client: Any, params: dict, sleep: Callable[[float], None] = time.sleep) -> Any:
+    """metadata.get_cost, retried once on a server-side error (504 seen on NQ/NG on Actions)."""
+    try:
+        return client.metadata.get_cost(**params)
+    except Exception as exc:  # noqa: BLE001
+        if not _is_server_error(exc):
+            raise
+        sleep(RETRY_SLEEP_S)
+        return client.metadata.get_cost(**params)
+
+
 def get_range_with_retry(client: Any, params: dict, sleep: Callable[[float], None] = time.sleep) -> Any:
     """timeseries.get_range, retried once after a short pause on a Databento server-side error (5xx, e.g.
     '504 The remote gateway timed out', seen on Actions 2026-10-01). Same params, already cost-checked (A10);
@@ -398,7 +413,7 @@ def run(
         params = request_params(root, root_start, end)
         try:
             try:
-                cost = _num(client.metadata.get_cost(**params))
+                cost = _num(get_cost_with_retry(client, params, sleep))
             except Exception as exc:  # noqa: BLE001
                 lic = licensed_end(exc)
                 if lic is None or lic >= end:
@@ -408,7 +423,7 @@ def run(
                     unchanged.append(root)
                     continue
                 params = request_params(root, root_start, end)
-                cost = _num(client.metadata.get_cost(**params))
+                cost = _num(get_cost_with_retry(client, params, sleep))
             log_cost("quote", params, cost)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{root}: cost check failed: {safe_error(exc, [key])}")
@@ -453,7 +468,7 @@ def run(
         if p_start >= delayed_to:
             raise _NothingNew()
         p = request_params(root, p_start, delayed_to)
-        cost = _num(client.metadata.get_cost(**p))
+        cost = _num(get_cost_with_retry(client, p, sleep))
         log_cost("quote (licensed window)", p, cost)
         if cost is None or cost < 0 or total + cost > COST_CAP_USD:
             raise RuntimeError("cost check for the licensed window failed or exceeds the cost cap")
@@ -467,7 +482,7 @@ def run(
         if p_start >= w_end:
             raise _NothingNew()
         p = request_params(root, p_start, w_end)
-        cost = _num(client.metadata.get_cost(**p))
+        cost = _num(get_cost_with_retry(client, p, sleep))
         log_cost("quote (clamped window)", p, cost)
         if cost is None or cost < 0 or total + cost > COST_CAP_USD:
             raise RuntimeError("cost check for the clamped window failed or exceeds the cost cap")
@@ -538,5 +553,7 @@ def run(
     data_end = delayed_to if delayed_to is not None else end
     if data_end < window_end:
         source = f"{source}; delayed: Databento data available to this account up to {data_end:%Y-%m-%dT%H:%MZ}"
+    for e in errors:  # full list in the Actions log (the summary line shows only the first)
+        print(f"bars error: {e}", file=sys.stderr, flush=True)
     envelope = make_envelope(DATASET_NAME, source, status, errors, data, data_as_of, now)
     return publish(DATASET_NAME, source, envelope, out, previous, now)

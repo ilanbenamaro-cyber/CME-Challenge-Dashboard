@@ -553,3 +553,25 @@ def test_symbology_end_date_is_last_data_day_and_retries_on_available_end_date(t
     assert "contracts" in env["data"], env["errors"]
     ends = [p["end_date"] for n, p in rec.calls if n == "resolve"]
     assert ends and all(e <= "2026-10-05" for e in ends)
+
+
+def test_server_error_on_cost_check_is_retried_once(tmp_path):
+    """Actions 2026-10-05: 'NG: cost check failed: BentoServerError: 504 The remote gateway timed out.'"""
+    now = datetime(2026, 10, 6, 15, 7, tzinfo=timezone.utc)
+    rec = Recorder()
+    inner = rec.metadata
+    state = {"failed": False}
+
+    class M:
+        def get_cost(self, **p):
+            if p["symbols"][0] == "CL.c.0" and not state["failed"]:
+                state["failed"] = True
+                rec.calls.append(("get_cost", p))
+                raise RuntimeError("BentoServerError: 504 The remote gateway timed out.")
+            return inner.get_cost(**p)
+
+    rec.metadata = M()
+    slept = []
+    env = fetch_bars.run(now, tmp_path / "bars.json", client_factory=lambda key: rec, env=ENV, sleep=slept.append)
+    assert env["status"] == "ok", env["errors"]
+    assert slept == [fetch_bars.RETRY_SLEEP_S]
