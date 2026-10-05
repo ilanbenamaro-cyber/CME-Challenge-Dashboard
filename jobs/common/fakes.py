@@ -23,7 +23,8 @@ def _parse_ts(value: Any) -> datetime:
     return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
-def synthetic_frame(symbol: str, start: datetime, end: datetime, base: float, tick: float) -> Any:
+def synthetic_frame(symbol: str, start: datetime, end: datetime, base: float, tick: float,
+                    instrument_id: int | None = None) -> Any:
     """Deterministic hourly OHLCV DataFrame shaped like DBNStore.to_df() for ohlcv-1h."""
     import pandas as pd
 
@@ -37,7 +38,7 @@ def synthetic_frame(symbol: str, start: datetime, end: datetime, base: float, ti
             c = mid + tick * round(6 * math.sin(i / 3.0))
             h = max(o, c) + tick * 4
             lo = min(o, c) - tick * 4
-            rows.append({"rtype": 34, "publisher_id": 1, "instrument_id": 1000 + len(symbol),
+            rows.append({"rtype": 34, "publisher_id": 1, "instrument_id": 1000 + len(symbol) if instrument_id is None else instrument_id,
                          "open": o, "high": h, "low": lo, "close": c, "volume": 1000 + 17 * (i % 13),
                          "symbol": symbol})
             index.append(t)
@@ -60,24 +61,59 @@ class _Metadata:
         return 0.0001 * len(params.get("symbols") or [])
 
 
+MONTHS = "FGHJKMNQUVXZ"
+
+
+def synthetic_instrument(symbol: str, start: datetime) -> tuple[int, str]:
+    """Deterministic (instrument_id, raw symbol) for a SYNTHETIC continuous symbol like "HO.c.1": the n-th month
+    after `start`'s month, e.g. HOX6. Not real symbology."""
+    root, _, n = symbol.split(".")
+    k = start.month - 1 + int(n) + 1
+    month, year = MONTHS[k % 12], start.year + k // 12
+    return int.from_bytes(root.encode(), "big") * 10 + int(n), f"{root}{month}{year % 10}"
+
+
+class _Symbology:
+    def __init__(self) -> None:
+        self.known: dict[int, str] = {}
+
+    def resolve(self, **params: Any) -> dict:
+        return {"result": {s: [{"d0": params["start_date"], "d1": params["end_date"], "s": self.known[int(s)]}]
+                           for s in params["symbols"] if int(s) in self.known},
+                "symbols": params["symbols"], "stype_in": params["stype_in"], "stype_out": params["stype_out"]}
+
+
 class _Timeseries:
-    def __init__(self, fixture: dict) -> None:
+    def __init__(self, fixture: dict, symbology: _Symbology | None = None) -> None:
         self._fixture = fixture
+        self._symbology = symbology
 
     def get_range(self, **params: Any) -> _Store:
         import pandas as pd
 
-        (symbol,) = params["symbols"]
+        frames = [self._one(symbol, params) for symbol in params["symbols"]]
+        frames = [f for f in frames if len(f)]
+        if not frames:
+            return _Store(pd.DataFrame(columns=["open", "high", "low", "close", "volume", "symbol"]))
+        return _Store(pd.concat(frames).sort_index(kind="stable"))
+
+    def _one(self, symbol: str, params: dict) -> Any:
+        import pandas as pd
+
         root = symbol.split(".")[0]
         spec = self._fixture["roots"].get(root)
         if spec is None:
             if root in self._fixture.get("empty_roots", []):
-                return _Store(pd.DataFrame(columns=["open", "high", "low", "close", "volume", "symbol"]))
+                return pd.DataFrame(columns=["open", "high", "low", "close", "volume", "symbol"])
             # Roots added to contracts.json after the fixture was written (e.g. ZT/ZN/HO) get generic
             # SYNTHETIC bars so a dry run stays complete; prices are placeholders, never published.
             spec = {"base": 100.0, "tick": 0.01}
         start, end = _parse_ts(params["start"]), _parse_ts(params["end"])
-        return _Store(synthetic_frame(symbol, start, end, float(spec["base"]), float(spec["tick"])))
+        iid, raw = synthetic_instrument(symbol, end)
+        if self._symbology is not None:
+            self._symbology.known[iid] = raw
+        n = int(symbol.split(".")[-1])
+        return synthetic_frame(symbol, start, end, float(spec["base"]) + n * float(spec["tick"]) * 8, float(spec["tick"]), iid)
 
 
 class FakeDatabentoClient:
@@ -86,7 +122,8 @@ class FakeDatabentoClient:
     def __init__(self, fixture_path: Path = BARS_FIXTURE) -> None:
         fixture = json.loads(Path(fixture_path).read_text(encoding="utf-8"))
         self.metadata = _Metadata()
-        self.timeseries = _Timeseries(fixture)
+        self.symbology = _Symbology()
+        self.timeseries = _Timeseries(fixture, self.symbology)
 
 
 class FakeResponse:

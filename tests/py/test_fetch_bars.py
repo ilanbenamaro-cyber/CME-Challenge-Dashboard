@@ -133,7 +133,7 @@ def test_invalid_cost_skips_root_without_spend(now, tmp_path, bad):
     c = Recorder(costs={"GC": bad})
     e = _run(now, tmp_path, c)
     assert e["status"] == "partial"
-    assert not any(p["symbols"] == ["GC.c.0"] for n, p in c.calls if n == "get_range")
+    assert not any(p["symbols"][0] == "GC.c.0" for n, p in c.calls if n == "get_range")
     assert "GC" not in e["data"]["roots"]
 
 
@@ -183,7 +183,7 @@ def test_rows_for_other_symbols_and_nan_are_dropped_not_zeroed(now, tmp_path):
                            name="ts_event")
     df = pd.DataFrame({"open": [1.0, float("nan"), 3.0], "high": [2.0, 2.0, 4.0], "low": [0.5, 0.5, 2.5],
                        "close": [1.5, 1.5, 3.5], "volume": [1, 1, 1],
-                       "symbol": ["ES.c.0", "ES.c.0", "ES.c.1"]}, index=idx)
+                       "symbol": ["ES.c.0", "ES.c.0", "ES.c.9"]}, index=idx)  # ES.c.9 is never requested
     e = _run(now, tmp_path, Recorder(frames={"ES": df}))
     bars = e["data"]["roots"]["ES"]["bars"]
     assert [b["t"] for b in bars] == ["2026-09-30T12:00:00Z"]
@@ -288,7 +288,7 @@ def test_unlicensed_fallback_respects_cost_cap(tmp_path):
     rec = LicensedRecorder(datetime(2026, 9, 30, 18, 7, 10, tzinfo=timezone.utc))
     rec.costs = {"ES": 1.99}  # planned total ~2.0; the re-check for the delayed window would exceed $2.00
     env = _run(now, tmp_path, rec)
-    assert all(not (n == "get_range" and p["symbols"] == ["ES.c.0"] and p["end"] == "2026-09-30T18:00:00Z") for n, p in rec.calls)
+    assert all(not (n == "get_range" and p["symbols"][0] == "ES.c.0" and p["end"] == "2026-09-30T18:00:00Z") for n, p in rec.calls)
     assert any("ES: range request failed" in e and "cap" in e for e in env["errors"])
 
 
@@ -422,7 +422,7 @@ def test_server_error_on_range_is_retried_once(tmp_path):
 
     class T:
         def get_range(self, **p):
-            if p["symbols"] == ["NQ.c.0"] and not state["failed"]:
+            if p["symbols"][0] == "NQ.c.0" and not state["failed"]:
                 state["failed"] = True
                 rec.calls.append(("get_range", p))
                 raise RuntimeError("BentoServerError: 504 The remote gateway timed out.")
@@ -433,7 +433,7 @@ def test_server_error_on_range_is_retried_once(tmp_path):
     env = fetch_bars.run(now, tmp_path / "bars.json", client_factory=lambda key: rec, env=ENV, sleep=slept.append)
     assert env["status"] == "ok", env["errors"]
     assert slept == [fetch_bars.RETRY_SLEEP_S]
-    nq = [p for n, p in rec.calls if n == "get_range" and p["symbols"] == ["NQ.c.0"]]
+    nq = [p for n, p in rec.calls if n == "get_range" and p["symbols"][0] == "NQ.c.0"]
     assert len(nq) == 2 and nq[0] == nq[1]                       # same, already cost-checked params
 
 
@@ -442,4 +442,92 @@ def test_server_error_twice_is_reported_not_looped(tmp_path):
     rec = Recorder(range_exc={"NQ": RuntimeError("BentoServerError: 504 The remote gateway timed out.")})
     env = fetch_bars.run(now, tmp_path / "bars.json", client_factory=lambda key: rec, env=ENV, sleep=lambda s: None)
     assert env["status"] == "partial"
-    assert sum(1 for n, p in rec.calls if n == "get_range" and p["symbols"] == ["NQ.c.0"]) == 2
+    assert sum(1 for n, p in rec.calls if n == "get_range" and p["symbols"][0] == "NQ.c.0") == 2
+
+
+# --- ADR-010: exact-contract series -------------------------------------------------------------------------------
+
+def test_contract_code_from_raw_symbol():
+    assert fetch_bars.contract_code("HO", "HOZ6", 2026) == "HOZ26"
+    assert fetch_bars.contract_code("ZN", "ZNH7", 2026) == "ZNH27"
+    assert fetch_bars.contract_code("GC", "GCZ26", 2026) == "GCZ26"
+    assert fetch_bars.contract_code("ES", "ESH0", 2029) == "ESH30"   # next decade, not 2020
+    assert fetch_bars.contract_code("CL", "HOZ6", 2026) is None      # wrong root
+    assert fetch_bars.contract_code("CL", "CLZ6-CLF7", 2026) is None  # spreads are not outright contracts
+
+
+class SymRecorder(Recorder):
+    """Recorder whose ranges return c.0/c.1 rows for distinct instruments and that resolves ids like Databento."""
+
+    def __init__(self, raw_by_id, fail_resolve=False):
+        super().__init__()
+        rec = self
+
+        class T:
+            def get_range(self, **p):
+                rec.calls.append(("get_range", p))
+                start = datetime.fromisoformat(p["start"].replace("Z", "+00:00"))
+                end = datetime.fromisoformat(p["end"].replace("Z", "+00:00"))
+                root = p["symbols"][0].split(".")[0]
+                frames = [synthetic_frame(f"{root}.c.{n}", start, end, 100.0 + n, 0.25, instrument_id=hash((root, n)) % 10**6)
+                          for n in (0, 1)]
+                df = pd.concat(frames).sort_index(kind="stable")
+
+                class S:
+                    def to_df(self_inner):
+                        return df
+                return S()
+
+        class Y:
+            def resolve(self, **p):
+                rec.calls.append(("resolve", p))
+                if fail_resolve:
+                    raise RuntimeError("BentoClientError: 400 bad symbology request")
+                return {"result": {s: [{"d0": p["start_date"], "d1": p["end_date"], "s": raw_by_id(int(s))}] for s in p["symbols"]}}
+
+        self.timeseries, self.symbology = T(), Y()
+
+
+def _raw(iid):
+    for root in ["ES", "NQ", "CL", "GC"]:
+        for n, m in ((0, "X"), (1, "Z")):
+            if hash((root, n)) % 10**6 == iid:
+                return f"{root}{m}6"
+    return "??"
+
+
+def test_contract_series_published_per_exact_contract(tmp_path):
+    now = datetime(2026, 10, 6, 15, 7, tzinfo=timezone.utc)
+    rec = SymRecorder(_raw)
+    env = _run(now, tmp_path, rec)
+    validate("bars", env)
+    assert env["status"] == "ok", env["errors"]
+    c = env["data"]["contracts"]
+    assert set(c) == {f"{r}{m}26" for r in ["ES", "NQ", "CL", "GC"] for m in "XZ"}
+    assert c["CLZ26"]["raw_symbol"] == "CLZ6" and c["CLZ26"]["symbol"] == "CL.c.1" and c["CLZ26"]["root"] == "CL"
+    # c.1 rows never leak into the front-month series, and each contract carries its own prices.
+    assert env["data"]["roots"]["CL"]["bars"][-1]["c"] == c["CLX26"]["bars"][-1]["c"]
+    assert c["CLZ26"]["bars"][-1]["c"] != c["CLX26"]["bars"][-1]["c"]
+    assert sum(1 for n, _ in rec.calls if n == "resolve") == 1     # one free metadata call for all ids
+
+
+def test_symbology_failure_keeps_roots_and_reports(tmp_path):
+    now = datetime(2026, 10, 6, 15, 7, tzinfo=timezone.utc)
+    env = _run(now, tmp_path, SymRecorder(_raw, fail_resolve=True))
+    assert set(env["data"]["roots"]) == {"ES", "NQ", "CL", "GC"}
+    assert "contracts" not in env["data"]
+    assert any(e.startswith("contract symbology failed") for e in env["errors"])
+
+
+def test_expired_contract_series_are_pruned(tmp_path):
+    t0 = datetime(2026, 10, 6, 15, 7, tzinfo=timezone.utc)
+    _run(t0, tmp_path, SymRecorder(_raw))
+    # Four days later the previously published CLX26 series has no bar inside the 72h window -> dropped,
+    # unless refreshed; here the fake keeps resolving the same months, so all still present; inject an old one.
+    path = tmp_path / "bars.json"
+    env = json.loads(path.read_text())
+    env["data"]["contracts"]["CLV26"] = {"root": "CL", "symbol": "CL.c.0", "raw_symbol": "CLV6",
+                                         "bars": [{"t": "2026-09-01T00:00:00Z", "o": 1, "h": 1, "l": 1, "c": 1, "v": 1}]}
+    path.write_text(json.dumps(env))
+    env2 = _run(t0 + timedelta(hours=1), tmp_path, SymRecorder(_raw))
+    assert "CLV26" not in env2["data"]["contracts"] and "CLZ26" in env2["data"]["contracts"]
