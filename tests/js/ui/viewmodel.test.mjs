@@ -120,7 +120,8 @@ test('bars missing: open P&L UNKNOWN, mark UNKNOWN', () => {
   assert.ok(vm.banners.some((b) => b.kind === 'data' && b.title === 'bars MISSING' && b.level === 'unknown'));
 });
 
-test('bars stale: mark shown with a STALE flag, open P&L UNKNOWN', () => {
+test('bars stale: mark and open P&L shown with a STALE badge (decision B)', () => {
+  // O1 long 2 MES @5795.00, fees $1.24, mark 5801.25 -> $62.50 - $1.24 = $61.26.
   const i = inputs();
   const vm = buildViewModel({ ...i, envs: { ...i.envs, bars: barsEnv(NOW - 245 * MIN) } });
   noSectionErrors(vm);
@@ -128,8 +129,10 @@ test('bars stale: mark shown with a STALE flag, open P&L UNKNOWN', () => {
   const mark = vm.positions.rows[0]?.mark;
   assert.equal(mark?.text, '5801.25');
   assert.equal(mark?.badge, 'STALE 4h 5m');
-  assert.equal(vm.positions.rows[0]?.pnl.text, 'UNKNOWN');
-  assert.equal(vm.account.open.text, 'UNKNOWN');
+  assert.equal(vm.positions.rows[0]?.pnl.text, '$61.26');
+  assert.equal(vm.positions.rows[0]?.pnl.badge, 'STALE 4h 5m');
+  assert.equal(vm.account.open.text, '$61.26');
+  assert.match(vm.account.open.badge ?? '', /bars STALE 4h 5m/);
   const es = vm.markets.find((m) => m.root === 'ES');
   assert.equal(es?.last.text, '5801.25');
   assert.equal(es?.last.badge, 'STALE 4h 5m');

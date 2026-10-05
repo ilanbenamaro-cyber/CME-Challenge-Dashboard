@@ -35,3 +35,8 @@
   marked with HOX26: ~+$14.7k phantom). Bars job fetches <ROOT>.c.0..c.2, maps instrument_id -> raw symbol via
   symbology.resolve and publishes data.contracts keyed by contract code (e.g. HOZ26). Sheet Trades gains a `contract`
   column; a position is marked only with its own contract's bars; missing/unmatched contract -> open P&L UNKNOWN.
+- 2026-10-05 ADR-011 (Ilan: option B): stale marks still price open positions. With delayed (~8h) Databento data,
+  "stale -> open P&L UNKNOWN" (G3 P1-4 as built) made open P&L, equity and the 20% meter permanently UNKNOWN while
+  holding positions. Now a displayable mark (fresh/partial/stale/last-good) prices the position and every derived
+  figure carries "bars STALE <age>" from the oldest position mark (series age, not only the envelope's). Missing
+  series, invalid data or no contract still give UNKNOWN.

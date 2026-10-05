@@ -154,8 +154,9 @@ function esBarsShifted(shiftMs) {
   return esBars().map((b) => ({ ...b, t: new Date(Date.parse(b.t) - shiftMs).toISOString() }));
 }
 
-test('P1-4: fresh bars envelope but an ES series that ended 30h ago: mark STALE, open P&L UNKNOWN', () => {
-  // /tmp/g3/vm_attacks.mjs #6.
+test('P1-4: fresh bars envelope but an ES series that ended 30h ago: mark STALE, open P&L priced with STALE badge', () => {
+  // /tmp/g3/vm_attacks.mjs #6. Decision B (Ilan, 2026-10-05): stale marks price the position, badged with their age.
+  // O1 long 2 MES @5795.00, fees $1.24, mark 5801.25: 25 ticks x $1.25 x 2 = $62.50 - $1.24 = $61.26.
   const base = inputs();
   const shifted = esBarsShifted(30 * 60 * MIN);
   const bars = env('bars', { roots: { ES: { symbol: 'ES.c.0', bars: shifted } }, contracts: esz26(shifted) }, NOW - 30 * MIN);
@@ -166,8 +167,10 @@ test('P1-4: fresh bars envelope but an ES series that ended 30h ago: mark STALE,
   const mark = vm.positions.rows[0]?.mark;
   assert.equal(mark?.text, '5801.25');
   assert.equal(mark?.badge, 'STALE 1d 6h'); // last bar closed 30h ago
-  assert.equal(vm.positions.rows[0]?.pnl.text, 'UNKNOWN');
-  assert.equal(vm.account.open.text, 'UNKNOWN');
+  assert.equal(vm.positions.rows[0]?.pnl.text, '$61.26');
+  assert.equal(vm.positions.rows[0]?.pnl.badge, 'STALE 1d 6h');
+  assert.equal(vm.account.open.text, '$61.26');
+  assert.match(vm.account.open.badge ?? '', /bars STALE 1d 6h/);   // fresh envelope must not hide the series age
   const es = vm.markets.find((m) => m.root === 'ES');
   assert.equal(es?.last.text, '5801.25');
   assert.equal(es?.last.badge, 'STALE 1d 6h');

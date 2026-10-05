@@ -429,7 +429,28 @@ function inputsBadge(ctx, names) {
  * @returns {string|null}
  */
 function accountBadge(ctx) {
-  return inputsBadge(ctx, openKnownRows(ctx).length > 0 ? ['sheet', 'bars'] : ['sheet']);
+  if (openKnownRows(ctx).length === 0) return inputsBadge(ctx, ['sheet']);
+  const parts = [inputsBadge(ctx, ['sheet']), openMarksBadge(ctx) ?? inputsBadge(ctx, ['bars'])].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+/**
+ * Badge of the oldest non-fresh position mark ("bars STALE 8h 12m"), or null when every open position is marked
+ * from fresh bars. Uses each mark's own freshness (series and envelope), so a fresh envelope with one stale
+ * contract series still shows the age.
+ * @param {Ctx} ctx
+ * @returns {string|null}
+ */
+function openMarksBadge(ctx) {
+  /** @type {Freshness|null} */
+  let worst = null;
+  for (const t of ctx.open ?? []) {
+    const m = positionMark(ctx, t);
+    if (m.price === null || m.fr.state === 'fresh') continue;
+    if (worst === null || (m.fr.age_min ?? 0) > (worst.age_min ?? 0)) worst = m.fr;
+  }
+  const b = worst ? staleBadge(worst) : null;
+  return b ? `bars ${b}` : null;
 }
 
 /** States whose `data` may be displayed (with a badge when not fresh). */
@@ -824,6 +845,9 @@ function markCell(ctx, m) {
 
 /**
  * Open P&L of one open trade in cents (net of the row's fees, as for closed trades), or null with a reason.
+ * Ilan's decision B (2026-10-05): a stale mark (delayed Databento data) still prices the position; the value
+ * carries a STALE badge with its age everywhere it flows (positions, open P&L, equity, meters). Only a missing or
+ * unusable mark (no series, invalid data, no contract) gives UNKNOWN.
  * @param {Ctx} ctx
  * @param {Trade} t
  * @returns {{cents: number|null, reason: string, mark: Mark}}
@@ -831,7 +855,7 @@ function markCell(ctx, m) {
 function openPnl(ctx, t) {
   const m = positionMark(ctx, t);
   if (!m.spec) return { cents: null, reason: m.reason, mark: m };
-  if (!m.usable || m.price === null) return { cents: null, reason: m.reason || 'no mark', mark: m };
+  if (m.price === null) return { cents: null, reason: m.reason || 'no mark', mark: m };
   try {
     return { cents: tradePnlCents(t, m.spec, m.price).net_cents, reason: '', mark: m };
   } catch (e) {
