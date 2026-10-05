@@ -52,7 +52,7 @@ test('normalizeSheet: coerces numeric strings and blank exit to an open trade', 
   assert.ok(r.data);
   assert.deepEqual(r.data.trades, [{
     id: '7', root: 'MES', side: 'long', qty: 3, entry: 5800.5, exit: null,
-    entry_time: '2026-09-30T09:00:00-05:00', exit_time: null, fees_usd: 1.24, notes: 'scalp',
+    entry_time: '2026-09-30T09:00:00-05:00', exit_time: null, fees_usd: 1.24, contract: null, notes: 'scalp',
   }]);
 });
 
