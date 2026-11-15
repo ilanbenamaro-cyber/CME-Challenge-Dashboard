@@ -1,11 +1,24 @@
 {
   "schema_version": 1,
   "dataset": "bars",
-  "generated_at": "2026-11-14T02:18:05Z",
+  "generated_at": "2026-11-15T06:16:16Z",
   "data_as_of": "2026-11-13T18:00:00Z",
-  "source": "Databento GLBX.MDP3 ohlcv-1h (stype_in=continuous, <ROOT>.c.0); delayed: Databento data available to this account up to 2026-11-13T18:00Z",
-  "status": "ok",
-  "errors": [],
+  "source": "Databento GLBX.MDP3 ohlcv-1h (stype_in=continuous, <ROOT>.c.0)",
+  "status": "error",
+  "errors": [
+    "ES: cost check failed: BentoClientError: 422 symbology_invalid_request None of the symbols could be resolved documentation: https://databento.com/docs/api-reference-historical/basics/symbology",
+    "NQ: cost check failed: BentoClientError: 422 symbology_invalid_request None of the symbols could be resolved documentation: https://databento.com/docs/api-reference-historical/basics/symbology",
+    "CL: cost check failed: BentoClientError: 422 symbology_invalid_request None of the symbols could be resolved documentation: https://databento.com/docs/api-reference-historical/basics/symbology",
+    "GC: cost check failed: BentoClientError: 422 symbology_invalid_request None of the symbols could be resolved documentation: https://databento.com/docs/api-reference-historical/basics/symbology",
+    "ZT: cost check failed: BentoClientError: 422 symbology_invalid_request None of the symbols could be resolved documentation: https://databento.com/docs/api-reference-historical/basics/symbology",
+    "ZF: cost check failed: BentoClientError: 422 symbology_invalid_request None of the symbols could be resolved documentation: https://databento.com/docs/api-reference-historical/basics/symbology",
+    "ZN: cost check failed: BentoClientError: 422 symbology_invalid_request None of the symbols could be resolved documentation: https://databento.com/docs/api-reference-historical/basics/symbology",
+    "ZB: cost check failed: BentoClientError: 422 symbology_invalid_request None of the symbols could be resolved documentation: https://databento.com/docs/api-reference-historical/basics/symbology",
+    "HO: cost check failed: BentoClientError: 422 symbology_invalid_request None of the symbols could be resolved documentation: https://databento.com/docs/api-reference-historical/basics/symbology",
+    "RB: cost check failed: BentoClientError: 422 symbology_invalid_request None of the symbols could be resolved documentation: https://databento.com/docs/api-reference-historical/basics/symbology",
+    "NG: cost check failed: BentoClientError: 422 symbology_invalid_request None of the symbols could be resolved documentation: https://databento.com/docs/api-reference-historical/basics/symbology",
+    "SI: cost check failed: BentoClientError: 422 symbology_invalid_request None of the symbols could be resolved documentation: https://databento.com/docs/api-reference-historical/basics/symbology"
+  ],
   "data": {
     "roots": {
       "ES": {
