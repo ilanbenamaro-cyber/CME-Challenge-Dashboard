@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "dataset": "bars",
-  "generated_at": "2026-11-16T00:57:18Z",
+  "generated_at": "2026-11-16T07:53:43Z",
   "data_as_of": "2026-11-13T22:00:00Z",
-  "source": "Databento GLBX.MDP3 ohlcv-1h (stype_in=continuous, <ROOT>.c.0); delayed: Databento data available to this account up to 2026-11-15T16:00Z",
+  "source": "Databento GLBX.MDP3 ohlcv-1h (stype_in=continuous, <ROOT>.c.0); delayed: Databento data available to this account up to 2026-11-15T23:00Z",
   "status": "ok",
   "errors": [],
   "data": {
@@ -6827,7 +6827,7 @@
       "MCL": "CL",
       "MGC": "GC"
     },
-    "cost_usd": 0.003637,
+    "cost_usd": 0.000307,
     "contracts": {
       "CLF27": {
         "root": "CL",
